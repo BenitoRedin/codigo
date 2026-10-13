@@ -208,7 +208,7 @@ function act(room, p, a) {
     case 'guess': {
       if (!p || room.state !== 'playing' || room.phase !== 'guess') return 'No es momento de adivinar';
       if (p.team !== room.turn || p.role !== 'operative') return 'No es tu turno';
-      const card = room.cards[a.index];
+      const card = Number.isInteger(a.index) ? room.cards[a.index] : null;
       if (!card || card.revealed) return 'Carta inválida';
       card.revealed = true;
       card.agent = teamAgent(room, card.type);
@@ -237,6 +237,15 @@ function act(room, p, a) {
       if (p.team !== room.turn || p.role !== 'operative') return 'No es tu turno';
       if (room.guessesMade === 0) return 'Deben elegir al menos una palabra';
       endTurn(room);
+      return null;
+    }
+    case 'abort': {
+      if (p) return 'Solo se puede terminar desde la tele';
+      if (room.state !== 'playing') return 'No hay partida en curso';
+      room.state = 'lobby';
+      room.cards = null;
+      room.clue = null;
+      room.last = null;
       return null;
     }
     case 'newGame': {
@@ -312,12 +321,15 @@ function readBody(req) {
       if (raw.length > 10000) req.destroy();
     });
     req.on('end', () => {
-      try { resolve(JSON.parse(raw || '{}')); } catch { resolve({}); }
+      try {
+        const body = JSON.parse(raw || '{}');
+        resolve(body && typeof body === 'object' && !Array.isArray(body) ? body : {});
+      } catch { resolve({}); }
     });
   });
 }
 
-const server = http.createServer(async (req, res) => {
+async function handle(req, res) {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
 
@@ -407,6 +419,15 @@ const server = http.createServer(async (req, res) => {
   }
 
   sendJson(res, 404, { error: 'No encontrado' });
+}
+
+// Un error en una petición no debe tirar abajo las partidas en curso.
+const server = http.createServer((req, res) => {
+  handle(req, res).catch((err) => {
+    console.error(err);
+    if (res.headersSent) res.end();
+    else sendJson(res, 500, { error: 'Error del servidor' });
+  });
 });
 
 setInterval(() => {

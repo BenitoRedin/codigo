@@ -43,8 +43,8 @@
   /* ---------- avatares ---------- */
   .av { border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: radial-gradient(circle at 35% 30%, #fff, #cfd8e6); box-shadow: 0 0 0 .2vw #fff, 0 .4vh .8vh #0008; flex: none; line-height: 1; }
   .av.pic { background-size: 185%; background-position: 50% 30%; background-repeat: no-repeat; }
-  .person .av.pic { width: 7vw; height: 7vw; }
-  .people.many .person .av.pic { width: 4.2vw; height: 4.2vw; }
+  .person .av.pic { width: 6.2vw; height: 6.2vw; }
+  .people.many .person .av.pic { width: 2.2vw; height: 2.2vw; }
   h1 .av { width: 4.6vw; height: 4.6vw; font-size: 3vw; }
 
   /* ---------- paneles de equipo ---------- */
@@ -59,9 +59,11 @@
   .people { display: flex; flex-wrap: wrap; justify-content: center; gap: .8vh .5vw; position: relative; }
   .person { display: flex; flex-direction: column; align-items: center; min-width: 0; max-width: 100%; }
   .person .av { width: 5.4vw; height: 5.4vw; font-size: 3.5vw; }
-  .people.many .person .av { width: 3.4vw; height: 3.4vw; font-size: 2.2vw; }
+  .people.many { justify-content: flex-start; gap: .7vh .3vw; }
+  .people.many .person { flex-direction: row; align-items: center; gap: .3vw; width: calc(50% - .15vw); }
+  .people.many .person .av { width: 2.2vw; height: 2.2vw; font-size: 1.4vw; }
   .person .nm { margin-top: -1vh; font-size: 1.5vw; font-weight: 600; border-radius: .7vw; padding: .1vh .8vw; max-width: 13vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
-  .people.many .person .nm { font-size: 1.05vw; max-width: 6.5vw; padding: .1vh .5vw; }
+  .people.many .person .nm { font-size: .95vw; margin: 0; flex: 1; min-width: 0; max-width: none; padding: .1vh .25vw; text-align: left; }
   .blue .person .nm { background: var(--blue-x); } .red .person .nm { background: var(--red-x); }
   .person.off { opacity: .45; filter: grayscale(.6); }
   .none { font-size: 1.15vw; opacity: .75; font-style: italic; padding: 1.5vh 0; position: relative; }
@@ -74,8 +76,8 @@
 
   /* ---------- registro ---------- */
   .log { flex: 1; min-height: 0; background: #0a101dcc; border: .14vw solid #ffffff2e; border-radius: 1.1vw; padding: .6vh .5vw 1vh; overflow: hidden; display: flex; flex-direction: column; }
-  .log h3 { font-family: var(--title); font-size: 1.05vw; color: #fff9; text-align: center; letter-spacing: .06vw; }
-  .log .rows { margin-top: auto; }
+  .log h3 { font-family: var(--title); font-size: 1.05vw; color: #fff9; text-align: center; letter-spacing: .06vw; padding-bottom: .4vh; border-bottom: .1vw solid #ffffff22; }
+  .log .rows { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
   .log .c { display: flex; align-items: center; gap: .4vw; margin-top: 1vh; }
   .log .c .av { width: 2vw; height: 2vw; font-size: 1.3vw; box-shadow: 0 0 0 .12vw #fff; }
   .log .c .pill { flex: 1; display: flex; align-items: center; justify-content: space-between; background: #fff; color: #141414; border-radius: .5vw; font-family: var(--title); font-size: 1.2vw; font-weight: 700; padding: 0 .2vw 0 .6vw; border: .2vw solid; overflow: hidden; }
@@ -129,6 +131,9 @@
   .lobby .warn { font-size: 1.7vw; color: #ffd66b; }
   button { font-family: var(--title); font-size: 2.3vw; font-weight: 700; text-transform: uppercase; color: #17300a; background: linear-gradient(#d2ff8a, #96e03a); border: 0; border-radius: 1.2vw; padding: .8vh 3vw; cursor: pointer; box-shadow: 0 .8vh 0 #4f8a12, 0 1.4vh 2vh #0008; }
   button:focus { outline: .4vw solid #fff; outline-offset: .3vw; }
+  button.quit { position: absolute; right: 0; top: 0; font-family: var(--round); font-size: 1.1vw; font-weight: 500; text-transform: none; color: #fff; background: #ffffff1f; box-shadow: none; border: .14vw solid #fff5; border-radius: 2vw; padding: .3vh 1vw; }
+  button.quit:focus { outline-width: .2vw; }
+  button.quit.armed { background: #c0392b; border-color: #fff; }
 
   #toast { position: fixed; left: 50%; bottom: 7vh; transform: translateX(-50%); pointer-events: none; z-index: 3; }
   #toast div { font-family: var(--title); font-size: 3.2vw; font-weight: 700; padding: 1vh 3vw; border-radius: 1.5vw; box-shadow: 0 0 0 .3vw #fff, 0 1vh 3vh #000c; animation: toast 3s forwards; text-transform: uppercase; white-space: nowrap; }
@@ -159,6 +164,8 @@ const cache = {};
 function setHTML(id, html) { if (cache[id] !== html) { cache[id] = html; $(id).innerHTML = html; } }
 
 let code = null;
+let last = null;       // último estado recibido
+let quitArmed = false; // "Terminar partida" pide confirmar con una segunda pulsación
 
 async function post(path, body) {
   const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -260,7 +267,8 @@ function log(s) {
 }
 
 function head(s) {
-  const room = `<div class="room">Sala <b>${s.code}</b></div>`;
+  const room = `<div class="room">Sala <b>${s.code}</b></div>`
+    + (s.state === 'playing' ? `<button class="quit ${quitArmed ? 'armed' : ''}" data-act="abort">${quitArmed ? '¿Seguro? Pulsa otra vez' : 'Terminar partida'}</button>` : '');
   if (s.state === 'lobby') return `<h1 class="logo">CLAVE SECRETA</h1>`;
   if (s.state === 'over') {
     const why = s.winReason === 'assassin' ? 'El otro equipo tocó al asesino' : 'Encontraron a todos sus agentes';
@@ -300,6 +308,8 @@ function center(s) {
 }
 
 function render(s) {
+  last = s;
+  if (s.state !== 'playing') quitArmed = false;
   setHTML('head', head(s));
   setHTML('left', side(s, 'blue'));
   setHTML('right', side(s, 'red') + log(s));
@@ -312,7 +322,13 @@ function render(s) {
 
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
-  if (b) post('/api/action', { room: code, type: b.dataset.act });
+  if (!b) return;
+  if (b.dataset.act === 'abort' && !quitArmed) {
+    quitArmed = true;
+    setTimeout(() => { quitArmed = false; if (last) render(last); }, 4000);
+    return render(last);
+  }
+  post('/api/action', { room: code, type: b.dataset.act });
 });
 
 init();
