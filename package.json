@@ -1,0 +1,19 @@
+{
+  "name": "clave-secreta",
+  "version": "0.1.0",
+  "description": "Juego de palabras por equipos para la tele, con los celulares como mando",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.5"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true
+}

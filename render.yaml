@@ -1,0 +1,9 @@
+# Configuración para desplegar en Render (render.com) como servicio web gratuito.
+services:
+  - type: web
+    name: clave-secreta
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /

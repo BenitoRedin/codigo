@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Clave Secreta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --blue: #2f8fd8; --blue-d: #17578f; --red: #d9482b; --red-d: #8f2412;
+    --card: #f7d3ad; --label: #8b6243; --neutral: #d8cbaa; --bg: #0b1322;
+    --title: "Oswald", "Roboto Condensed", "Arial Narrow", sans-serif-condensed, Arial, sans-serif;
+    --round: "Fredoka", "Trebuchet MS", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: repeating-linear-gradient(0deg, #ffffff05 0 2px, transparent 2px 6px), radial-gradient(ellipse 120% 60% at 50% 0%, #24406b, #14233d 45%, var(--bg) 85%) fixed;
+    color: #fff; font-family: var(--round);
+    display: flex; flex-direction: column; padding: 10px; gap: 10px; user-select: none;
+  }
+  h1 { font-family: var(--title); font-size: 30px; text-align: center; text-transform: uppercase; text-shadow: 0 3px 0 #0007; }
+  .t-blue { color: #6dbcff; } .t-red { color: #ff8266; }
+  button, input, select { font: inherit; font-size: 18px; border-radius: 12px; border: 0; padding: 12px 14px; }
+  button { font-family: var(--title); font-weight: 700; text-transform: uppercase; color: #17300a; background: linear-gradient(#d2ff8a, #96e03a); box-shadow: 0 4px 0 #4f8a12; cursor: pointer; }
+  button:active { transform: translateY(3px); box-shadow: 0 1px 0 #4f8a12; }
+  button:disabled { opacity: .4; }
+  button.ghost { background: #ffffff24; color: #fff; box-shadow: 0 4px 0 #0006; }
+  button.on { background: linear-gradient(#ffe69a, #ffc93c); color: #3a2a00; box-shadow: 0 4px 0 #a87a00; }
+  input, select { background: #fff; color: #111; min-width: 0; }
+
+  .center { margin: auto; width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+  .center p { opacity: .8; }
+
+  .me { text-align: center; font-size: 15px; opacity: .85; }
+  .team { border-radius: 18px; padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: inset 0 3px 0 #fff4, 0 6px 14px #0007; }
+  .team.blue { background: linear-gradient(165deg, #45b0f5, var(--blue-d)); }
+  .team.red { background: linear-gradient(165deg, #f5764d, var(--red-d)); }
+  .team h2 { font-family: var(--title); font-size: 20px; text-align: center; letter-spacing: 1px; text-shadow: 0 2px 0 #0004; }
+  .slot { background: #0004; border-radius: 10px; padding: 8px 10px; font-size: 15px; }
+  .slot b { font-size: 12px; opacity: .7; display: block; letter-spacing: 1px; }
+  .slot .mine { color: #d2ff8a; }
+  .row { display: flex; gap: 8px; } .row > * { flex: 1; }
+  .team button { font-size: 16px; padding: 10px 6px; background: #fff; color: #111; box-shadow: 0 4px 0 #0005; }
+  .who { display: inline-flex; align-items: center; gap: 4px; margin: 3px 8px 0 0; font-weight: 600; }
+  .av { width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, #cfd8e6); display: inline-flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; }
+  .av.pic { background-size: 185%; background-position: 50% 30%; background-repeat: no-repeat; }
+  .me .av { vertical-align: middle; margin-right: 4px; }
+  .picker { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pick { position: relative; border-radius: 14px; overflow: hidden; aspect-ratio: 16 / 10; border: 4px solid transparent; background: #000; cursor: pointer; box-shadow: 0 4px 0 #0007; }
+  .pick img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
+  .pick.sel { border-color: #b6ff5c; box-shadow: 0 0 14px #b6ff5c; }
+  .pick .used { position: absolute; left: 6px; bottom: 6px; background: #000b; border-radius: 8px; padding: 1px 8px; font-size: 13px; }
+  .warn { text-align: center; color: #ffd66b; font-size: 15px; }
+
+  #status { text-align: center; min-height: 64px; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+  #status .big { font-family: var(--title); font-size: 22px; font-weight: 700; text-transform: uppercase; text-shadow: 0 2px 0 #0007; }
+  #status .small { font-size: 14px; opacity: .8; }
+  .clue { align-self: center; background: #fff; color: #111; border-radius: 10px; padding: 0 4px 0 14px; font-family: var(--title); font-size: 28px; font-weight: 700; border: 3px solid; display: inline-flex; gap: 10px; align-items: center; }
+  .clue.blue { border-color: var(--blue); } .clue.red { border-color: var(--red); }
+  .clue b { color: #fff; border-radius: 8px; min-width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; font-size: 20px; }
+  .clue.blue b { background: var(--blue); } .clue.red b { background: var(--red); }
+  .score { display: flex; justify-content: space-between; align-items: center; font-family: var(--title); font-weight: 700; font-size: 22px; }
+  .score .me { font-family: var(--round); font-weight: 500; }
+
+  .board { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(5, 1fr); gap: 5px; min-height: 300px; max-height: 70vh; }
+  .card { border-radius: 9px; background: linear-gradient(#fde6c9, #f0c193); box-shadow: inset 0 0 0 2px #fbdcb8, inset 0 0 0 3px #dca876, 0 3px 0 #b98a5c; font-family: var(--title); letter-spacing: .2px; color: #5a3a22; display: flex; align-items: center; justify-content: center; text-align: center; font-size: clamp(9px, 3vw, 22px); font-weight: 700; padding: 2px; border: 3px solid transparent; overflow: hidden; }
+  .card.tap { cursor: pointer; }
+  .card.sel { border-color: #b6ff5c; box-shadow: 0 0 12px #b6ff5c; transform: scale(1.05); }
+  .card.rev { color: #fff; opacity: .45; text-decoration: line-through; }
+  .card.rev, .card.key { box-shadow: 0 3px 0 #0007; }
+  .card.rev.blue, .card.key.blue { background: linear-gradient(#45b0f5, var(--blue-d)); color: #fff; }
+  .card.rev.red, .card.key.red { background: linear-gradient(#f5764d, var(--red-d)); color: #fff; }
+  .card.rev.neutral, .card.key.neutral { background: linear-gradient(#efe6cf, #b3a684); color: #554; }
+  .card.rev.assassin, .card.key.assassin { background: #000; color: #ff4b4b; }
+  .card.key.assassin { border-color: #ff3b3b; box-shadow: 0 0 12px #ff2b2b; }
+
+  #actions { display: flex; flex-direction: column; gap: 8px; }
+  #err { position: fixed; left: 10px; right: 10px; top: 10px; background: #c0392b; border-radius: 12px; padding: 12px; text-align: center; font-weight: 700; display: none; z-index: 5; }
+</style>
+</head>
+<body>
+  <div id="err"></div>
+  <div id="app" style="display:contents"></div>
+
+<script>
+const TEAM_NAME = { red: 'ROJO', blue: 'AZUL' };
+const code = location.pathname.split('/').pop().toUpperCase();
+const KEY = 'cs_token_' + code;
+const AVATARS = ['🦊', '🐼', '🐸', '🐵', '🦁', '🐯', '🐨', '🐙', '🦉', '🐺', '🐱', '🐶', '🦄', '🐲', '🐧', '🐻'];
+const avatar = (p) => p.agent
+  ? `<span class="av pic" style="background-image:url(/agents/${p.agent})"></span>`
+  : `<span class="av">${AVATARS[p.id % AVATARS.length]}</span>`;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const cache = {};
+// Solo toca el DOM si cambió, para no borrar lo que el jugador está escribiendo.
+function setHTML(id, html) { if (cache[id] !== html) { cache[id] = html; $(id).innerHTML = html; } }
+
+let token = null;
+let state = null;
+let screen = '';
+let selected = null;  // carta marcada por el operativo, pendiente de confirmar
+let showKey = false;  // el jefe decide cuándo mirar la clave
+let picking = false;  // pantalla de elegir personaje abierta a mano
+let skipped = false;  // prefirió jugar sin personaje
+
+try { token = localStorage.getItem(KEY); } catch {}
+
+function fail(msg) {
+  const e = $('err');
+  e.textContent = msg; e.style.display = 'block';
+  clearTimeout(fail.t); fail.t = setTimeout(() => (e.style.display = 'none'), 3000);
+}
+
+async function api(type, extra) {
+  try {
+    const r = await fetch('/api/action', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ room: code, token, type, ...extra }),
+    });
+    const j = await r.json();
+    if (!r.ok) { j.status = r.status; if (type !== 'hello') fail(j.error || 'Error'); }
+    return j;
+  } catch { fail('Sin conexión'); return { error: 'net' }; }
+}
+
+function show(name, html) {
+  if (screen !== name) { screen = name; delete cache.app; }
+  setHTML('app', html);
+}
+
+async function init() {
+  const r = await api('hello');
+  if (r.error === 'net') return setTimeout(init, 2000);
+  if (r.status === 404 && /sala/i.test(r.error)) {
+    return show('gone', `<div class="center"><h1>Clave Secreta</h1><p>La sala ${esc(code)} ya no existe.<br>Escanea de nuevo el QR de la tele.</p></div>`);
+  }
+  if (r.error) { token = null; try { localStorage.removeItem(KEY); } catch {} }
+  if (!token) {
+    return show('name', `<form class="center" id="joinForm">
+      <h1>Clave Secreta</h1><p>Sala ${esc(code)}</p>
+      <input id="name" maxlength="14" placeholder="Tu nombre" autocomplete="off" required>
+      <button>Entrar</button></form>`);
+  }
+  const es = new EventSource(`/api/events?room=${code}&token=${token}`);
+  es.onmessage = (e) => { state = JSON.parse(e.data); render(); };
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED) setTimeout(init, 2000); };
+}
+
+// ---------- personaje ----------
+
+function picker(s) {
+  const tiles = s.agents.map((a) => {
+    const who = s.players.filter((p) => p.agent === a && p.id !== s.me.id).map((p) => p.name).join(', ');
+    return `<div class="pick ${s.me.agent === a ? 'sel' : ''}" data-agent="${a}"><img src="/agents/${a}" alt="">${who ? `<span class="used">${esc(who)}</span>` : ''}</div>`;
+  }).join('');
+  return `<h1>Elige tu personaje</h1>
+    <div class="me">Saldrá en la tele en las cartas de tu equipo</div>
+    <div class="picker">${tiles}</div>
+    <button class="ghost" data-act="noAgent">Jugar sin personaje</button>`;
+}
+
+// ---------- sala de espera ----------
+
+function slot(s, team, role, label) {
+  const list = s.players.filter((p) => p.team === team && p.role === role)
+    .map((p) => `<span class="who ${p.id === s.me.id ? 'mine' : ''}">${avatar(p)}${esc(p.name)}</span>`).join('');
+  return `<div class="slot"><b>${label}</b>${list || '—'}</div>`;
+}
+
+function teamBox(s, team) {
+  const canPick = s.state === 'lobby' || !s.me.team;
+  return `<div class="team ${team}">
+    <h2>EQUIPO ${TEAM_NAME[team]}</h2>
+    ${slot(s, team, 'spymaster', 'JEFE DE ESPÍAS')}
+    ${slot(s, team, 'operative', 'OPERATIVOS')}
+    ${canPick ? `<div class="row">
+      <button data-act="setTeam" data-team="${team}" data-role="spymaster">Ser jefe</button>
+      <button data-act="setTeam" data-team="${team}" data-role="operative">Ser operativo</button>
+    </div>` : ''}
+  </div>`;
+}
+
+function lobby(s) {
+  return `<h1>Elige tu equipo</h1>
+    <div class="me">${avatar(s.me)}Hola, ${esc(s.me.name)} · Sala ${s.code}</div>
+    ${s.agents.length ? `<button class="ghost" data-act="pick">${s.me.agent ? 'Cambiar personaje' : 'Elegir personaje'}</button>` : ''}
+    ${teamBox(s, 'blue')}${teamBox(s, 'red')}
+    ${s.state !== 'lobby' ? '<div class="warn">La partida ya empezó: entra como operativo</div>'
+      : s.startProblem ? `<div class="warn">${esc(s.startProblem)}</div>`
+      : `<button data-act="start">Empezar partida</button>`}`;
+}
+
+// ---------- partida ----------
+
+function statusHtml(s) {
+  const me = s.me;
+  if (s.state === 'over') {
+    const why = s.winReason === 'assassin' ? 'El otro equipo tocó al asesino' : 'Encontraron a todos sus agentes';
+    return `<div class="big t-${s.winner}">¡Gana el equipo ${TEAM_NAME[s.winner]}!</div><div class="small">${why}</div>`;
+  }
+  const mine = s.turn === me.team;
+  if (s.phase === 'clue') {
+    if (mine && me.role === 'spymaster') return `<div class="big">Tu turno: da una pista</div><div class="small">Una palabra y cuántas cartas señala</div>`;
+    const boss = s.players.find((p) => p.team === s.turn && p.role === 'spymaster');
+    return `<div class="big">${mine ? '' : 'Espera tu turno, '}<span class="t-${s.turn}">${esc(boss ? boss.name : 'el jefe')}</span> está dando una pista</div>`;
+  }
+  const left = s.guessesLeft === null ? 'sin límite de intentos' : `quedan ${s.guessesLeft} intento${s.guessesLeft === 1 ? '' : 's'}`;
+  const who = mine && me.role === 'operative' ? 'Toca una palabra y confirma' : mine ? 'Tus operativos están eligiendo' : `Adivina el equipo ${TEAM_NAME[s.turn]}`;
+  return `<div class="clue ${s.turn}">${esc(s.clue.word)} <b>${s.clue.num}</b></div><div class="small">${who} · ${left}</div>`;
+}
+
+function game(s) {
+  const me = s.me;
+  const boss = me.role === 'spymaster';
+  const canGuess = s.state === 'playing' && s.phase === 'guess' && s.turn === me.team && me.role === 'operative';
+  if (!canGuess || (selected !== null && s.cards[selected].revealed)) selected = null;
+  const keyOn = s.state === 'over' || (boss && showKey);
+
+  const cards = s.cards.map((c, i) => {
+    const cls = ['card'];
+    if (c.revealed) cls.push('rev', c.type);
+    else {
+      if (keyOn && c.type) cls.push('key', c.type);
+      if (canGuess) cls.push('tap');
+      if (selected === i) cls.push('sel');
+    }
+    return `<div class="${cls.join(' ')}" ${canGuess && !c.revealed ? `data-card="${i}"` : ''}>${esc(c.word)}</div>`;
+  }).join('');
+
+  let actions = '';
+  if (s.state === 'over') {
+    actions = `<button data-act="newGame">Nueva partida</button>`;
+  } else {
+    if (boss && s.phase === 'clue' && s.turn === me.team) {
+      actions += `<form class="row" id="clueForm">
+        <input id="clueWord" placeholder="Pista" maxlength="20" autocomplete="off" autocapitalize="characters" required style="flex:3">
+        <select id="clueNum" style="flex:1">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 0, '∞'].map((n) => `<option>${n}</option>`).join('')}</select>
+        <button style="flex:1.4">Enviar</button></form>`;
+    }
+    if (boss) actions += `<button class="${showKey ? 'on' : 'ghost'}" data-act="toggleKey">${showKey ? '🙈 Ocultar la clave' : '👁 Ver la clave'}</button>`;
+    if (canGuess) {
+      actions += selected !== null
+        ? `<div class="row"><button data-act="confirm">Revelar ${esc(s.cards[selected].word)}</button><button class="ghost" data-act="cancel" style="flex:.5">Cancelar</button></div>`
+        : `<button class="ghost" data-act="endTurn" ${s.guessesMade ? '' : 'disabled'}>Terminar turno</button>`;
+    }
+  }
+
+  return `<div class="score"><span class="t-blue">AZUL ${s.remaining.blue}</span>
+      <span class="me">${esc(me.name)} · ${boss ? 'jefe' : 'operativo'} <b class="t-${me.team}">${TEAM_NAME[me.team]}</b></span>
+      <span class="t-red">${s.remaining.red} ROJO</span></div>
+    <div id="status">${statusHtml(s)}</div>
+    <div class="board">${cards}</div>
+    <div id="actions">${actions}</div>`;
+}
+
+function render() {
+  const s = state;
+  if (!s) return;
+  if (s.state === 'lobby') { selected = null; showKey = false; }
+  if (s.agents.length && (picking || (!s.me.agent && !skipped && !s.me.team))) show('picker', picker(s));
+  else if (s.state === 'lobby' || !s.me.team) show('lobby', lobby(s));
+  else show('game', game(s));
+}
+
+// ---------- eventos ----------
+
+document.addEventListener('click', (e) => {
+  const card = e.target.closest('[data-card]');
+  if (card) { const i = Number(card.dataset.card); selected = selected === i ? null : i; return render(); }
+  const pick = e.target.closest('[data-agent]');
+  if (pick) { picking = false; return api('setAgent', { agent: pick.dataset.agent }); }
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act;
+  if (act === 'pick') { picking = true; return render(); }
+  if (act === 'noAgent') { picking = false; skipped = true; api('setAgent', { agent: null }); return render(); }
+  if (act === 'toggleKey') { showKey = !showKey; return render(); }
+  if (act === 'cancel') { selected = null; return render(); }
+  if (act === 'confirm') { const index = selected; selected = null; return api('guess', { index }); }
+  if (act === 'setTeam') return api('setTeam', { team: b.dataset.team, role: b.dataset.role });
+  api(act);
+});
+
+document.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (e.target.id === 'joinForm') {
+    const r = await api('join', { name: $('name').value });
+    if (r.token) { token = r.token; try { localStorage.setItem(KEY, token); } catch {} init(); }
+  } else if (e.target.id === 'clueForm') {
+    const r = await api('clue', { word: $('clueWord').value, num: $('clueNum').value });
+    if (!r.error) showKey = false;
+  }
+});
+
+init();
+</script>
+</body>
+</html>

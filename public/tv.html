@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clave Secreta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --blue: #2f9be8; --blue-d: #145a9c; --blue-x: #0b2f57;
+    --red: #e8552f; --red-d: #a52c12; --red-x: #5c1408;
+    --peach: #fbdcb8; --peach-d: #f0c193; --frame: #dca876; --label: #8b6243; --label-d: #6f4b30;
+    --neutral: #d8cbaa; --green: #b6ff5c; --bg: #0b1322;
+    --title: "Oswald", "Roboto Condensed", "Arial Narrow", sans-serif-condensed, Arial, sans-serif;
+    --round: "Fredoka", "Trebuchet MS", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background:
+      repeating-linear-gradient(0deg, #ffffff05 0 2px, transparent 2px 6px),
+      radial-gradient(ellipse 90% 70% at 50% 0%, #24406b, #14233d 45%, var(--bg) 85%);
+    color: #fff; font-family: var(--round);
+    display: grid; grid-template-rows: 12vh 1fr; padding: 1.5vh 1vw 2vh; gap: 1vh;
+  }
+
+  /* ---------- cabecera ---------- */
+  #head { display: flex; align-items: center; justify-content: center; gap: 1.6vw; text-align: center; position: relative; }
+  #head .room { position: absolute; left: 0; top: 0; font-size: 1.2vw; border: .14vw solid #fff7; border-radius: 2vw; padding: .3vh 1vw; background: #0006; }
+  #head .room b { letter-spacing: .2vw; }
+  #head h1 { font-family: var(--title); font-size: 3.3vw; font-weight: 700; text-transform: uppercase; display: flex; align-items: center; gap: .9vw; text-shadow: 0 .4vh 0 #0007; }
+  #head .logo { font-size: 4.4vw; letter-spacing: .5vw; background: linear-gradient(90deg, #6dc0ff, #fff 50%, #ff8a66); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; }
+  #head .sub { font-size: 1.5vw; opacity: .9; line-height: 1.3; }
+  .t-blue { color: #6dc0ff; } .t-red { color: #ff8a66; }
+  .clue { background: #fff; color: #141414; border-radius: 1.2vw; padding: .4vh .6vw .4vh 2vw; font-family: var(--title); font-size: 3.8vw; font-weight: 700; display: inline-flex; gap: 1.4vw; align-items: center; box-shadow: 0 .7vh 0 #0006; border: .35vw solid; animation: pop .45s cubic-bezier(.2, 1.6, .4, 1); }
+  .clue.blue { border-color: var(--blue); } .clue.red { border-color: var(--red); }
+  .clue b { color: #fff; border-radius: 1vw; min-width: 5vw; height: 5vw; display: inline-flex; align-items: center; justify-content: center; }
+  .clue.blue b { background: var(--blue); } .clue.red b { background: var(--red); }
+  @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ---------- avatares ---------- */
+  .av { border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: radial-gradient(circle at 35% 30%, #fff, #cfd8e6); box-shadow: 0 0 0 .2vw #fff, 0 .4vh .8vh #0008; flex: none; line-height: 1; }
+  .av.pic { background-size: 185%; background-position: 50% 30%; background-repeat: no-repeat; }
+  .person .av.pic { width: 7vw; height: 7vw; }
+  .people.many .person .av.pic { width: 4.2vw; height: 4.2vw; }
+  h1 .av { width: 4.6vw; height: 4.6vw; font-size: 3vw; }
+
+  /* ---------- paneles de equipo ---------- */
+  #main { display: grid; grid-template-columns: 15.5vw 1fr 15.5vw; gap: 1.1vw; min-height: 0; }
+  .side { display: flex; flex-direction: column; gap: 1.4vh; min-height: 0; }
+  .box { border-radius: 1.4vw; padding: 1vh .6vw 1.4vh; text-align: center; border: .3vw solid transparent; position: relative; overflow: hidden; box-shadow: inset 0 .3vh 0 #fff4, 0 .6vh 1.4vh #0007; }
+  .blue .box { background: linear-gradient(165deg, #45b0f5, var(--blue-d)); }
+  .red .box { background: linear-gradient(165deg, #f5764d, var(--red-d)); }
+  .box.active { border-color: var(--green); box-shadow: 0 0 2.4vw #b6ff5c99, inset 0 .3vh 0 #fff4; animation: glow 1.4s ease-in-out infinite alternate; }
+  @keyframes glow { to { box-shadow: 0 0 1vw #b6ff5c55, inset 0 .3vh 0 #fff4; } }
+  .box h3 { font-family: var(--title); font-size: 1.35vw; font-weight: 700; letter-spacing: .08vw; margin-bottom: .8vh; color: #fffc; text-shadow: 0 .2vh 0 #0004; position: relative; }
+  .people { display: flex; flex-wrap: wrap; justify-content: center; gap: .8vh .5vw; position: relative; }
+  .person { display: flex; flex-direction: column; align-items: center; min-width: 0; max-width: 100%; }
+  .person .av { width: 5.4vw; height: 5.4vw; font-size: 3.5vw; }
+  .people.many .person .av { width: 3.4vw; height: 3.4vw; font-size: 2.2vw; }
+  .person .nm { margin-top: -1vh; font-size: 1.5vw; font-weight: 600; border-radius: .7vw; padding: .1vh .8vw; max-width: 13vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+  .people.many .person .nm { font-size: 1.05vw; max-width: 6.5vw; padding: .1vh .5vw; }
+  .blue .person .nm { background: var(--blue-x); } .red .person .nm { background: var(--red-x); }
+  .person.off { opacity: .45; filter: grayscale(.6); }
+  .none { font-size: 1.15vw; opacity: .75; font-style: italic; padding: 1.5vh 0; position: relative; }
+
+  .count { display: flex; align-items: center; justify-content: center; gap: .8vw; }
+  .count .mini { width: 6.4vw; height: 8.5vh; border-radius: .6vw; overflow: hidden; box-shadow: 0 .4vh .8vh #0008; }
+  .count b { font-family: var(--title); font-size: 9vh; line-height: 1; -webkit-text-stroke: .16vw #fff; text-shadow: 0 .5vh 0 #0006; }
+  .blue .count b { color: var(--blue); } .red .count b { color: var(--red); }
+  .red .count { flex-direction: row-reverse; }
+
+  /* ---------- registro ---------- */
+  .log { flex: 1; min-height: 0; background: #0a101dcc; border: .14vw solid #ffffff2e; border-radius: 1.1vw; padding: .6vh .5vw 1vh; overflow: hidden; display: flex; flex-direction: column; }
+  .log h3 { font-family: var(--title); font-size: 1.05vw; color: #fff9; text-align: center; letter-spacing: .06vw; }
+  .log .rows { margin-top: auto; }
+  .log .c { display: flex; align-items: center; gap: .4vw; margin-top: 1vh; }
+  .log .c .av { width: 2vw; height: 2vw; font-size: 1.3vw; box-shadow: 0 0 0 .12vw #fff; }
+  .log .c .pill { flex: 1; display: flex; align-items: center; justify-content: space-between; background: #fff; color: #141414; border-radius: .5vw; font-family: var(--title); font-size: 1.2vw; font-weight: 700; padding: 0 .2vw 0 .6vw; border: .2vw solid; overflow: hidden; }
+  .log .c .pill i { font-style: normal; color: #fff; border-radius: .35vw; min-width: 1.5vw; text-align: center; margin: .2vh 0; }
+  .log .c.blue .pill { border-color: var(--blue); } .log .c.blue i { background: var(--blue); }
+  .log .c.red .pill { border-color: var(--red); } .log .c.red i { background: var(--red); }
+  .log .gs { padding-left: 2.4vw; }
+  .log .g { display: inline-block; font-family: var(--title); font-size: .95vw; font-weight: 500; border-radius: .3vw; padding: 0 .4vw; margin: .5vh .25vw 0 0; }
+  .g.blue { background: var(--blue); } .g.red { background: var(--red); } .g.neutral { background: var(--neutral); color: #443; } .g.assassin { background: #000; box-shadow: 0 0 0 .1vw #fff; }
+
+  /* ---------- tablero ---------- */
+  #center { min-height: 0; position: relative; }
+  .board { height: 100%; display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(5, 1fr); gap: 1.7vh .8vw; padding-bottom: .8vh; }
+  .card { border-radius: 1vw; background: linear-gradient(var(--peach), var(--peach-d)); box-shadow: 0 .7vh 0 #b98a5c, 0 1.3vh 1.6vh #0009; padding: .9vh .55vw; display: flex; position: relative; }
+  .card .in { flex: 1; border: .16vw solid var(--frame); border-radius: .65vw; display: flex; flex-direction: column; justify-content: flex-end; padding: .5vh .35vw; background: linear-gradient(#fde6c9, #f7d0a6 55%); position: relative; }
+  .card .in::before { content: ""; position: absolute; left: .5vw; right: .5vw; bottom: calc(1.9vw + 3.6vh); border-top: .14vw solid var(--frame); }
+  .card .w { background: linear-gradient(#9c7150, var(--label-d)); color: #fff; border-radius: .4vw; text-align: center; font-family: var(--title); font-size: 1.9vw; font-weight: 700; line-height: 1.35; white-space: nowrap; text-shadow: 0 .25vh 0 #0005; box-shadow: inset 0 .2vh 0 #fff3; }
+  .card.rev { padding: 0; overflow: hidden; animation: flip .6s cubic-bezier(.3, 1.4, .5, 1); }
+  .card.rev svg, .mini svg { display: block; width: 100%; height: 100%; }
+  /* Retrato en grises teñido con el color del equipo (duotono) */
+  .photo { position: relative; width: 100%; height: 100%; overflow: hidden; }
+  .photo img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; filter: grayscale(1) brightness(1.75) contrast(.95); mix-blend-mode: screen; }
+  .photo::after { content: ""; position: absolute; inset: 0; mix-blend-mode: multiply; }
+  .photo.blue { background: #174a82; } .photo.blue::after { background: linear-gradient(160deg, #8fd0ff, #2f9be8); }
+  .photo.red { background: #8a2410; } .photo.red::after { background: linear-gradient(160deg, #ffb08f, #e8552f); }
+  .photo.neutral { background: #4f4733; } .photo.neutral::after { background: linear-gradient(160deg, #f6eed8, #cdbf9f); }
+  .card.rev.blue { box-shadow: 0 0 0 .22vw #8fd0ff, 0 .7vh 0 var(--blue-x), 0 1.3vh 1.6vh #0009; }
+  .card.rev.red { box-shadow: 0 0 0 .22vw #ffb08f, 0 .7vh 0 var(--red-x), 0 1.3vh 1.6vh #0009; }
+  .card.rev.neutral { box-shadow: 0 0 0 .22vw #f3ead4, 0 .7vh 0 #6b6048, 0 1.3vh 1.6vh #0009; }
+  .card.rev.assassin { box-shadow: 0 0 0 .22vw #ff3b3b, 0 0 3vw #ff2b2b88; }
+  .card.rev .tag { position: absolute; left: .5vw; bottom: .6vh; font-family: var(--title); font-size: 1.05vw; font-weight: 500; background: #0008; border-radius: .3vw; padding: 0 .5vw; }
+  @keyframes flip { from { transform: rotateY(90deg) scale(1.1); } to { transform: none; } }
+  /* Fin de partida: se destapa la clave de las cartas que nadie eligió */
+  .card.key::after { content: ""; position: absolute; inset: 0; border-radius: 1vw; border: .55vw solid; pointer-events: none; }
+  .card.key.blue::after { border-color: var(--blue); } .card.key.red::after { border-color: var(--red); }
+  .card.key.assassin::after { border-color: #000; } .card.key.neutral::after { border-color: transparent; }
+  .card.key.neutral { filter: saturate(.3) brightness(.75); }
+
+  /* ---------- sala de espera ---------- */
+  .lobby { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh; text-align: center; }
+  .qr { display: flex; align-items: center; gap: 2.5vw; background: #ffffff12; border: .14vw solid #ffffff30; border-radius: 2vw; padding: 2.5vh 2.5vw; }
+  .qr img { height: 40vh; width: 40vh; background: #fff; border-radius: 1.2vw; padding: 1vh; }
+  .qr .info { text-align: left; max-width: 24vw; }
+  .qr .info p { font-size: 1.6vw; opacity: .85; margin-bottom: 1.2vh; }
+  .qr .info p b { display: inline-flex; width: 2.4vw; height: 2.4vw; border-radius: 50%; background: #fff; color: #14233d; align-items: center; justify-content: center; margin-right: .6vw; }
+  .qr .code { font-family: var(--title); font-size: 6vw; font-weight: 700; letter-spacing: .8vw; line-height: 1.1; }
+  .qr .url { font-size: 1.1vw; opacity: .6; word-break: break-all; }
+  .lobby .warn { font-size: 1.7vw; color: #ffd66b; }
+  button { font-family: var(--title); font-size: 2.3vw; font-weight: 700; text-transform: uppercase; color: #17300a; background: linear-gradient(#d2ff8a, #96e03a); border: 0; border-radius: 1.2vw; padding: .8vh 3vw; cursor: pointer; box-shadow: 0 .8vh 0 #4f8a12, 0 1.4vh 2vh #0008; }
+  button:focus { outline: .4vw solid #fff; outline-offset: .3vw; }
+
+  #toast { position: fixed; left: 50%; bottom: 7vh; transform: translateX(-50%); pointer-events: none; z-index: 3; }
+  #toast div { font-family: var(--title); font-size: 3.2vw; font-weight: 700; padding: 1vh 3vw; border-radius: 1.5vw; box-shadow: 0 0 0 .3vw #fff, 0 1vh 3vh #000c; animation: toast 3s forwards; text-transform: uppercase; white-space: nowrap; }
+  #toast .blue { background: var(--blue); } #toast .red { background: var(--red); } #toast .neutral { background: var(--neutral); color: #333; } #toast .assassin { background: #000; color: #ff4b4b; }
+  @keyframes toast { 0% { opacity: 0; transform: scale(.6); } 10%, 80% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+</style>
+</head>
+<body>
+  <div id="head"></div>
+  <div id="main">
+    <div id="left" class="side blue"></div>
+    <div id="center"></div>
+    <div id="right" class="side red"></div>
+  </div>
+  <div id="toast"></div>
+
+<script>
+const TEAM_NAME = { red: 'ROJO', blue: 'AZUL' };
+const AVATARS = ['🦊', '🐼', '🐸', '🐵', '🦁', '🐯', '🐨', '🐙', '🦉', '🐺', '🐱', '🐶', '🦄', '🐲', '🐧', '🐻'];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Quien eligió personaje usa su retrato; el resto, un animal.
+const avatar = (p) => p.agent
+  ? `<span class="av pic" style="background-image:url(/agents/${p.agent})"></span>`
+  : `<span class="av">${AVATARS[p.id % AVATARS.length]}</span>`;
+const cache = {};
+// Solo toca el DOM si cambió, así no se reinician animaciones ni se pierde el foco.
+function setHTML(id, html) { if (cache[id] !== html) { cache[id] = html; $(id).innerHTML = html; } }
+
+let code = null;
+
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return r.json();
+}
+
+async function init() {
+  let saved = null;
+  try { saved = localStorage.getItem('cs_tv_room'); } catch {}
+  try {
+    code = (await post('/api/room', { code: saved })).code;
+  } catch { return setTimeout(init, 2000); }
+  try { localStorage.setItem('cs_tv_room', code); } catch {}
+  const es = new EventSource('/api/events?room=' + code);
+  es.onmessage = (e) => render(JSON.parse(e.data));
+  // Si el servidor se reinició la sala ya no existe: se crea otra.
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED) setTimeout(init, 2000); };
+}
+
+// ---------- ilustraciones de las cartas reveladas ----------
+
+const PALETTE = {
+  blue: { bg: ['#6fc2fa', '#1c66ad'], coat: '#0b2f57', hair: '#123f73', face: '#cfe8fc', shade: '#9fcaf0', shirt: '#eef7ff', tie: '#2f9be8' },
+  red: { bg: ['#ff9468', '#b03a18'], coat: '#5c1408', hair: '#7a1c0c', face: '#ffd4b8', shade: '#f2a988', shirt: '#fff1e8', tie: '#e8552f' },
+  neutral: { bg: ['#f1e8d0', '#b3a684'], coat: '#8c8064', hair: '#6b6048', face: '#f6e6c8', shade: '#dcc9a3', shirt: '#fffaf0', tie: '#b3a684' },
+  assassin: { bg: ['#3a3a3a', '#000'], coat: '#000', hair: '#111', face: '#070707', shade: '#000', shirt: '#161616', tie: '#ff2b2b' },
+};
+
+// agent = personaje del equipo dueño de la carta; sin él se usa la ilustración.
+function art(type, i, agent) {
+  if (agent) return `<div class="photo ${type}"><img src="/agents/${agent}" alt=""></div>`;
+  const c = PALETTE[type];
+  const id = `g-${type}`;
+  const bars = [14, 34, 54, 140, 160, 180].map((x) => `<rect x="${x}" y="8" width="7" height="130"/>`).join('');
+  const shades = `<g fill="${c.coat}"><rect x="80" y="47" width="17" height="10" rx="3"/><rect x="103" y="47" width="17" height="10" rx="3"/><rect x="95" y="49" width="10" height="2.5"/></g>`;
+  let back = '', front = '';
+  if (type === 'assassin') {
+    back = `<path d="M62 100 C50 22 150 22 138 100Z" fill="#111"/>`;
+    front = `<g fill="#ff2b2b"><ellipse cx="90" cy="53" rx="6" ry="2.6"/><ellipse cx="110" cy="53" rx="6" ry="2.6"/></g>`;
+  } else if (type === 'neutral') {
+    back = `<path d="M150 138 L153 76 L169 78 L172 138Z" fill="${c.coat}"/><circle cx="161" cy="66" r="12" fill="${c.face}"/>`;
+    front = `<path d="M79 44 C80 30 120 30 121 44 C112 38 88 38 79 44Z" fill="${c.hair}"/>
+      <path d="M84 63 C91 55 98 58 100 61 C102 58 109 55 116 63 C109 68 102 65 100 64 C98 65 91 68 84 63Z" fill="${c.hair}"/>`;
+  } else if (i % 3 === 0) {
+    front = `<ellipse cx="100" cy="34" rx="42" ry="7.5" fill="${c.hair}"/><path d="M75 34 C72 6 128 6 125 34Z" fill="${c.hair}"/><rect x="75" y="26" width="50" height="6" fill="${c.tie}"/>`;
+  } else if (i % 3 === 1) {
+    back = `<path d="M73 60 C64 16 136 16 127 60 C132 84 130 100 124 106 L76 106 C70 100 68 84 73 60Z" fill="${c.hair}"/>`;
+    front = `<path d="M79 47 C82 26 118 26 121 47 C110 36 92 38 79 47Z" fill="${c.hair}"/>${shades}`;
+  } else {
+    front = `<path d="M79 46 C76 18 124 18 121 46 C112 33 90 33 79 46Z" fill="${c.hair}"/>
+      <path d="M81 60 C85 82 115 82 119 60 C110 69 90 69 81 60Z" fill="${c.hair}" opacity=".85"/>${shades}`;
+  }
+  return `<svg viewBox="0 0 200 138" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c.bg[0]}"/><stop offset="1" stop-color="${c.bg[1]}"/></linearGradient></defs>
+    <rect width="200" height="138" fill="url(#${id})"/>
+    <g fill="#fff" opacity=".13">${bars}<rect x="0" y="20" width="200" height="5"/></g>
+    <path d="M28 138 C30 96 64 86 100 86 C136 86 170 96 172 138Z" fill="${c.coat}"/>
+    ${back}
+    <path d="M86 86 L100 108 L114 86Z" fill="${c.shirt}"/>
+    <path d="M96.5 90 L103.5 90 L106 114 L100 121 L94 114Z" fill="${c.tie}"/>
+    <rect x="90" y="66" width="20" height="24" rx="7" fill="${c.shade}"/>
+    <ellipse cx="100" cy="52" rx="21" ry="25" fill="${c.face}"/>
+    ${front}
+  </svg>`;
+}
+
+// ---------- paneles ----------
+
+function people(s, team, role) {
+  const list = s.players.filter((p) => p.team === team && p.role === role);
+  if (!list.length) return '<div class="none">esperando…</div>';
+  return `<div class="people ${list.length > 2 ? 'many' : ''}">${list.map((p) =>
+    `<div class="person ${p.connected ? '' : 'off'}">${avatar(p)}<span class="nm">${esc(p.name)}</span></div>`).join('')}</div>`;
+}
+
+function side(s, team) {
+  const myTurn = s.state === 'playing' && s.turn === team;
+  const count = s.remaining ? `<div class="count"><b>${s.remaining[team]}</b><div class="mini">${art(team, 0)}</div></div>` : '';
+  return `
+    <div class="box ${myTurn && s.phase === 'guess' ? 'active' : ''}"><h3>OPERATIVOS</h3>${people(s, team, 'operative')}</div>
+    ${count}
+    <div class="box ${myTurn && s.phase === 'clue' ? 'active' : ''}"><h3>JEFE DE ESPÍAS</h3>${people(s, team, 'spymaster')}</div>`;
+}
+
+function log(s) {
+  if (s.state === 'lobby') return '';
+  // Cada pista con las palabras que eligieron después.
+  const turns = [];
+  for (const e of s.log) {
+    if (e.kind === 'clue') turns.push({ ...e, guesses: [] });
+    else if (turns.length) turns[turns.length - 1].guesses.push(e);
+  }
+  const rows = turns.slice(-6).map((t) => {
+    const boss = s.players.find((p) => p.name === t.by && p.team === t.team && p.role === 'spymaster') || { id: 0 };
+    return `<div class="c ${t.team}">${avatar(boss)}<div class="pill"><span>${esc(t.word)}</span><i>${t.num}</i></div></div>
+      <div class="gs">${t.guesses.map((g) => `<span class="g ${g.cardType}">${esc(g.word)}</span>`).join('')}</div>`;
+  }).join('');
+  return `<div class="log"><h3>REGISTRO DE LA PARTIDA</h3><div class="rows">${rows}</div></div>`;
+}
+
+function head(s) {
+  const room = `<div class="room">Sala <b>${s.code}</b></div>`;
+  if (s.state === 'lobby') return `<h1 class="logo">CLAVE SECRETA</h1>`;
+  if (s.state === 'over') {
+    const why = s.winReason === 'assassin' ? 'El otro equipo tocó al asesino' : 'Encontraron a todos sus agentes';
+    return `${room}<div><h1 class="t-${s.winner}">🏆 ¡Gana el equipo ${TEAM_NAME[s.winner]}!</h1><div class="sub">${why}</div></div><button data-act="newGame">Nueva partida</button>`;
+  }
+  if (s.phase === 'clue') {
+    const boss = s.players.find((p) => p.team === s.turn && p.role === 'spymaster');
+    return `${room}<h1>${boss ? avatar(boss) : ''}<span class="t-${s.turn}">${esc(boss ? boss.name : 'El jefe')}</span> está dando una pista</h1>`;
+  }
+  const left = s.guessesLeft === null ? 'intentos sin límite' : `quedan ${s.guessesLeft} intento${s.guessesLeft === 1 ? '' : 's'}`;
+  return `${room}<div class="clue ${s.turn}">${esc(s.clue.word)} <b>${s.clue.num}</b></div>
+    <div class="sub">Adivina el equipo <b class="t-${s.turn}">${TEAM_NAME[s.turn]}</b><br>${left}</div>`;
+}
+
+function center(s) {
+  if (s.state === 'lobby') {
+    const n = s.players.length;
+    return `<div class="lobby">
+      <div class="qr">
+        <img src="/qr?room=${s.code}" alt="QR">
+        <div class="info">
+          <p><b>1</b>Escanea el QR con tu celular</p>
+          <p><b>2</b>Elige equipo y rol</p>
+          <p><b>3</b>¡A jugar!</p>
+          <div class="code">${s.code}</div>
+          <div class="url">${esc(s.joinUrl.replace(/^https?:\/\//, ''))}</div>
+        </div>
+      </div>
+      ${s.startProblem
+        ? `<div class="warn">${n} jugador${n === 1 ? '' : 'es'} en la sala · ${esc(s.startProblem)}</div>`
+        : `<button data-act="start">Empezar partida</button>`}
+    </div>`;
+  }
+  return `<div class="board">${s.cards.map((c, i) => c.revealed
+    ? `<div class="card rev ${c.type}">${art(c.type, i, c.agent)}<div class="tag">${esc(c.word)}</div></div>`
+    : `<div class="card ${c.type ? 'key ' + c.type : ''}"><div class="in"><div class="w">${esc(c.word)}</div></div></div>`).join('')}</div>`;
+}
+
+function render(s) {
+  setHTML('head', head(s));
+  setHTML('left', side(s, 'blue'));
+  setHTML('right', side(s, 'red') + log(s));
+  setHTML('center', center(s));
+  setHTML('toast', s.last && s.state !== 'lobby' ? `<div class="${s.last.type}" data-seq="${s.last.seq}">${esc(s.last.text)}</div>` : '');
+  // El control remoto de la tele necesita que el botón tenga el foco.
+  const btn = document.querySelector('button[data-act]');
+  if (btn && document.activeElement !== btn) btn.focus();
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (b) post('/api/action', { room: code, type: b.dataset.act });
+});
+
+init();
+</script>
+</body>
+</html>
