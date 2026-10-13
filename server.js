@@ -5,11 +5,20 @@ const os = require('os');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const WORDS = require('./words');
+const CATEGORIES = require('./categories');
+
+// De dónde pueden salir las 25 palabras: la lista general, los mazos temáticos y las propias del admin.
+const MIX_KEYS = ['random', ...Object.keys(CATEGORIES), 'propias'];
+const MIX_LABEL = { random: 'Random', propias: 'Propias' };
+for (const key in CATEGORIES) MIX_LABEL[key] = CATEGORIES[key].label;
+const defaultMix = () => Object.fromEntries(MIX_KEYS.map((k) => [k, k === 'random' ? 100 : 0]));
 
 const PORT = process.env.PORT || 3210;
 // En producción (servidor en internet) poner PUBLIC_URL=https://midominio.com
 const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
+// Las pruebas acortan el segundo para no esperar turnos reales.
+const SECOND_MS = Number(process.env.SECOND_MS) || 1000;
 
 const TEAMS = ['red', 'blue'];
 const TEAM_NAME = { red: 'ROJO', blue: 'AZUL' };
@@ -85,6 +94,13 @@ function createRoom(req) {
     last: null,
     lastSeq: 0,
     log: [],
+    settings: { turnSeconds: 0, bestOf: 1, customWords: [], mix: defaultMix() },
+    score: { red: 0, blue: 0 },
+    round: 0,
+    firstTeam: null,
+    seriesOver: false,
+    deadline: null,
+    timer: null,
     streams: new Set(),
     touched: Date.now(),
   };
@@ -94,6 +110,9 @@ function createRoom(req) {
 
 const spymasterOf = (room, team) => room.players.find((p) => p.team === team && p.role === 'spymaster');
 const remaining = (room, team) => room.cards.filter((c) => c.type === team && !c.revealed).length;
+// El admin es el primero que entró; si se desconecta, manda el siguiente conectado.
+const adminOf = (room) => room.players.find((p) => p.connected) || room.players[0] || null;
+const clearPicks = (room) => room.players.forEach((p) => { p.pick = null; });
 
 // Las cartas de un equipo van rotando entre los personajes de ese equipo, empezando por el del jefe.
 function teamAgent(room, team) {
@@ -117,17 +136,82 @@ function startProblem(room) {
   return null;
 }
 
-function startGame(room) {
-  const first = TEAMS[crypto.randomInt(2)];
+function stopTimer(room) {
+  clearTimeout(room.timer);
+  room.timer = null;
+  room.deadline = null;
+}
+
+// El reloj cubre el turno entero (pista + adivinar). Al agotarse, el turno pasa al rival.
+function armTimer(room, extraSeconds = 0) {
+  stopTimer(room);
+  const seconds = room.settings.turnSeconds;
+  if (room.state !== 'playing' || !seconds) return;
+  const ms = (seconds + extraSeconds) * SECOND_MS;
+  room.deadline = Date.now() + ms;
+  room.timer = setTimeout(() => {
+    if (room.state !== 'playing') return;
+    setLast(room, `¡Se acabó el tiempo del equipo ${TEAM_NAME[room.turn]}!`, room.turn, 'time');
+    endTurn(room);
+    broadcast(room);
+  }, ms);
+  room.timer.unref();
+}
+
+// "PERRO; gato;san martín" -> lista sin repetidos, en mayúsculas.
+function parseWords(text) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of String(text || '').slice(0, 10000).split(/[;\n]/)) {
+    const word = raw.trim().replace(/\s+/g, ' ').toUpperCase();
+    if (!word || word.length > 12 || seen.has(norm(word))) continue;
+    seen.add(norm(word));
+    out.push(word);
+    if (out.length >= 400) break;
+  }
+  return out;
+}
+
+// Reparte las 25 cartas entre los mazos según los porcentajes del admin.
+// Si un mazo no alcanza (pocas palabras propias, repetidas), se completa con la lista general.
+function pickWords(room) {
+  const pools = { random: WORDS, propias: room.settings.customWords };
+  for (const key in CATEGORIES) pools[key] = CATEGORIES[key].words;
+  const mix = room.settings.mix;
+  const keys = MIX_KEYS.filter((k) => mix[k] > 0 && pools[k].length);
+  const total = keys.reduce((n, k) => n + mix[k], 0);
+  const used = new Set();
+  const out = [];
+  const take = (pool, n) => {
+    for (const word of shuffle([...pool])) {
+      if (n <= 0) break;
+      if (used.has(norm(word))) continue;
+      used.add(norm(word));
+      out.push(word);
+      n--;
+    }
+  };
+  if (total) {
+    // Resto mayor: las cartas que sobran del redondeo van a los mazos con más fracción.
+    const shares = keys.map((k) => ({ k, exact: (25 * mix[k]) / total }));
+    let spare = 25 - shares.reduce((n, s) => n + Math.floor(s.exact), 0);
+    shares.sort((a, b) => (b.exact % 1) - (a.exact % 1));
+    for (const s of shares) take(pools[s.k], Math.floor(s.exact) + (spare-- > 0 ? 1 : 0));
+  }
+  take(WORDS, 25 - out.length);
+  return shuffle(out);
+}
+
+function startGame(room, first) {
   const types = shuffle([
     ...Array(9).fill(first),
     ...Array(8).fill(other(first)),
     ...Array(7).fill('neutral'),
     'assassin',
   ]);
-  const words = shuffle([...WORDS]).slice(0, 25);
-  room.cards = words.map((word, i) => ({ word, type: types[i], revealed: false }));
+  room.cards = pickWords(room).map((word, i) => ({ word, type: types[i], revealed: false }));
   room.state = 'playing';
+  room.firstTeam = first;
   room.turn = first;
   room.phase = 'clue';
   room.clue = null;
@@ -138,6 +222,9 @@ function startGame(room) {
   room.last = null;
   room.log = [];
   room.civilOffset = crypto.randomInt(1000); // para que no empiece siempre el mismo civil
+  clearPicks(room);
+  // Quien abre tiene una carta más para encontrar: su primer turno dura un minuto extra.
+  armTimer(room, 60);
 }
 
 function endTurn(room) {
@@ -146,16 +233,32 @@ function endTurn(room) {
   room.clue = null;
   room.guessesLeft = null;
   room.guessesMade = 0;
+  clearPicks(room);
+  armTimer(room);
 }
 
 function win(room, team, reason) {
   room.state = 'over';
   room.winner = team;
   room.winReason = reason;
+  stopTimer(room);
+  clearPicks(room);
+  room.score[team]++;
+  room.seriesOver = room.score[team] >= Math.ceil(room.settings.bestOf / 2);
 }
 
-function setLast(room, text, type) {
-  room.last = { text, type, seq: ++room.lastSeq };
+function backToLobby(room) {
+  stopTimer(room);
+  clearPicks(room);
+  room.state = 'lobby';
+  room.cards = null;
+  room.clue = null;
+  room.last = null;
+}
+
+// sfx le dice a la tele qué sonido tocar.
+function setLast(room, text, type, sfx) {
+  room.last = { text, type, sfx, seq: ++room.lastSeq };
 }
 
 // Devuelve un mensaje de error o null si la acción se aplicó.
@@ -183,10 +286,14 @@ function act(room, p, a) {
       return null;
     }
     case 'start': {
+      if (p && adminOf(room) !== p) return 'Solo el admin o la tele pueden empezar';
       if (room.state !== 'lobby') return 'La partida ya empezó';
       const problem = startProblem(room);
       if (problem) return problem;
-      startGame(room);
+      room.score = { red: 0, blue: 0 };
+      room.round = 1;
+      room.seriesOver = false;
+      startGame(room, TEAMS[crypto.randomInt(2)]);
       return null;
     }
     case 'clue': {
@@ -205,6 +312,16 @@ function act(room, p, a) {
       room.phase = 'guess';
       return null;
     }
+    case 'pick': {
+      // Marcar una carta para que el equipo la vea antes de confirmarla.
+      if (!p || room.state !== 'playing' || room.phase !== 'guess') return 'No es momento de adivinar';
+      if (p.team !== room.turn || p.role !== 'operative') return 'No es tu turno';
+      if (a.index === null || a.index === undefined) { p.pick = null; return null; }
+      const card = Number.isInteger(a.index) ? room.cards[a.index] : null;
+      if (!card || card.revealed) return 'Carta inválida';
+      p.pick = a.index;
+      return null;
+    }
     case 'guess': {
       if (!p || room.state !== 'playing' || room.phase !== 'guess') return 'No es momento de adivinar';
       if (p.team !== room.turn || p.role !== 'operative') return 'No es tu turno';
@@ -212,21 +329,22 @@ function act(room, p, a) {
       if (!card || card.revealed) return 'Carta inválida';
       card.revealed = true;
       card.agent = teamAgent(room, card.type);
+      for (const x of room.players) if (x.pick === a.index) x.pick = null;
       const team = room.turn;
       room.log.push({ kind: 'guess', team, by: p.name, word: card.word, cardType: card.type });
       if (card.type === 'assassin') {
-        setLast(room, `${card.word}: ¡el asesino!`, 'assassin');
+        setLast(room, `${card.word}: ¡el asesino!`, 'assassin', 'assassin');
         win(room, other(team), 'assassin');
       } else if (card.type === team) {
-        setLast(room, `${card.word}: ¡correcto!`, team);
+        setLast(room, `${card.word}: ¡correcto!`, team, 'ok');
         room.guessesMade++;
         if (remaining(room, team) === 0) win(room, team, 'agents');
         else if (room.guessesLeft !== null && --room.guessesLeft === 0) endTurn(room);
       } else if (card.type === 'neutral') {
-        setLast(room, `${card.word}: civil, fin del turno`, 'neutral');
+        setLast(room, `${card.word}: civil, fin del turno`, 'neutral', 'miss');
         endTurn(room);
       } else {
-        setLast(room, `${card.word}: era del equipo ${TEAM_NAME[card.type]}`, card.type);
+        setLast(room, `${card.word}: era del equipo ${TEAM_NAME[card.type]}`, card.type, 'enemy');
         if (remaining(room, card.type) === 0) win(room, card.type, 'agents');
         else endTurn(room);
       }
@@ -239,21 +357,79 @@ function act(room, p, a) {
       endTurn(room);
       return null;
     }
+    case 'takeBoss': {
+      // Si el jefe se fue, un operativo de su equipo puede ocupar su lugar.
+      if (!p || room.state !== 'playing') return 'No hay partida en curso';
+      if (!p.team || p.role !== 'operative') return 'Solo un operativo puede reemplazar al jefe';
+      const boss = spymasterOf(room, p.team);
+      if (boss && boss.connected) return 'Tu jefe sigue conectado';
+      if (boss) boss.role = 'operative';
+      p.role = 'spymaster';
+      p.pick = null;
+      setLast(room, `${p.name} es el nuevo jefe ${TEAM_NAME[p.team]}`, p.team, 'clue');
+      return null;
+    }
+    case 'kick': {
+      if (!p || adminOf(room) !== p) return 'Solo el admin puede expulsar';
+      const target = room.players.find((x) => x.id === a.id);
+      if (!target || target === p) return 'Jugador inválido';
+      room.players = room.players.filter((x) => x !== target);
+      for (const st of [...room.streams]) {
+        if (st.player === target) { room.streams.delete(st); st.res.end(); }
+      }
+      return null;
+    }
+    case 'settings': {
+      if (!p || adminOf(room) !== p) return 'Solo el admin cambia los ajustes';
+      if (room.state !== 'lobby') return 'Los ajustes se cambian en la sala de espera';
+      if (a.turnSeconds !== undefined) {
+        if (![0, 60, 90, 120, 180, 240].includes(a.turnSeconds)) return 'Tiempo inválido';
+        room.settings.turnSeconds = a.turnSeconds;
+      }
+      if (a.bestOf !== undefined) {
+        if (![1, 3, 5].includes(a.bestOf)) return 'Formato inválido';
+        room.settings.bestOf = a.bestOf;
+      }
+      if (a.customWords !== undefined) {
+        room.settings.customWords = parseWords(a.customWords);
+        // Cargar palabras propias las pone a jugar; borrarlas vuelve a lo anterior.
+        const mix = room.settings.mix;
+        if (room.settings.customWords.length) { if (!mix.propias) room.settings.mix = { ...defaultMix(), random: 0, propias: 100 }; }
+        else { mix.propias = 0; if (!MIX_KEYS.some((k) => mix[k] > 0)) room.settings.mix = defaultMix(); }
+      }
+      if (a.mix !== undefined) {
+        if (!a.mix || typeof a.mix !== 'object') return 'Mezcla inválida';
+        const mix = {};
+        for (const key of MIX_KEYS) {
+          const value = a.mix[key] === undefined ? 0 : a.mix[key];
+          if (!Number.isInteger(value) || value < 0 || value > 100) return 'Mezcla inválida';
+          mix[key] = value;
+        }
+        if (!room.settings.customWords.length) mix.propias = 0;
+        room.settings.mix = MIX_KEYS.some((k) => mix[k] > 0) ? mix : defaultMix();
+      }
+      return null;
+    }
     case 'abort': {
-      if (p) return 'Solo se puede terminar desde la tele';
+      if (p && adminOf(room) !== p) return 'Solo el admin o la tele pueden terminar la partida';
       if (room.state !== 'playing') return 'No hay partida en curso';
-      room.state = 'lobby';
-      room.cards = null;
-      room.clue = null;
-      room.last = null;
+      backToLobby(room);
+      return null;
+    }
+    case 'next': {
+      // Siguiente ronda de la serie: abre el equipo que no abrió la anterior.
+      if (p && adminOf(room) !== p) return 'Solo el admin o la tele pueden seguir';
+      if (room.state !== 'over' || room.seriesOver) return 'No hay ronda siguiente';
+      const problem = startProblem(room);
+      if (problem) return problem;
+      room.round++;
+      startGame(room, other(room.firstTeam));
       return null;
     }
     case 'newGame': {
+      if (p && adminOf(room) !== p) return 'Solo el admin o la tele pueden volver a la sala';
       if (room.state !== 'over') return 'La partida no terminó';
-      room.state = 'lobby';
-      room.cards = null;
-      room.clue = null;
-      room.last = null;
+      backToLobby(room);
       return null;
     }
     default:
@@ -264,19 +440,36 @@ function act(room, p, a) {
 // Lo que ve cada pantalla. p = null es la tele. Solo los jefes reciben la clave.
 function view(room, p) {
   const seesKey = room.state === 'over' || (p && p.role === 'spymaster');
+  const admin = adminOf(room);
+  const myBoss = p && p.team ? spymasterOf(room, p.team) : null;
+  const guessing = room.state === 'playing' && room.phase === 'guess';
   return {
     code: room.code,
     joinUrl: room.joinUrl,
     agents: listAgents(),
     state: room.state,
     players: room.players.map(({ id, name, team, role, agent, connected }) => ({ id, name, team, role, agent, connected })),
-    me: p ? { id: p.id, name: p.name, team: p.team, role: p.role, agent: p.agent } : null,
+    adminId: admin ? admin.id : null,
+    me: p ? {
+      id: p.id, name: p.name, team: p.team, role: p.role, agent: p.agent,
+      isAdmin: admin === p,
+      canTakeBoss: room.state === 'playing' && !!p.team && p.role === 'operative' && (!myBoss || !myBoss.connected),
+      customText: admin === p ? room.settings.customWords.join('; ') : undefined,
+    } : null,
+    settings: { turnSeconds: room.settings.turnSeconds, bestOf: room.settings.bestOf, customCount: room.settings.customWords.length, mix: room.settings.mix },
+    mixOptions: MIX_KEYS.map((id) => ({ id, label: MIX_LABEL[id] })),
+    score: room.score,
+    round: room.round,
+    seriesOver: room.seriesOver,
     startProblem: room.state === 'lobby' ? startProblem(room) : null,
     turn: room.turn,
     phase: room.phase,
     clue: room.clue,
     guessesLeft: room.guessesLeft,
     guessesMade: room.guessesMade,
+    deadline: room.deadline,
+    now: Date.now(), // para que cada pantalla corrija la diferencia con su propio reloj
+    picks: guessing ? room.players.filter((x) => x.team === room.turn && Number.isInteger(x.pick)).map((x) => ({ id: x.id, index: x.pick })) : [],
     winner: room.winner,
     winReason: room.winReason,
     last: room.last,
@@ -401,7 +594,7 @@ async function handle(req, res) {
       const player = {
         id: room.nextId++,
         token: crypto.randomBytes(12).toString('hex'),
-        name, team: null, role: null, agent: null, connected: false,
+        name, team: null, role: null, agent: null, pick: null, connected: false,
       };
       room.players.push(player);
       broadcast(room);

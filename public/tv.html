@@ -95,6 +95,7 @@
   .card .in { flex: 1; border: .16vw solid var(--frame); border-radius: .65vw; display: flex; flex-direction: column; justify-content: flex-end; padding: .5vh .35vw; background: linear-gradient(#fde6c9, #f7d0a6 55%); position: relative; }
   .card .in::before { content: ""; position: absolute; left: .5vw; right: .5vw; bottom: calc(1.9vw + 3.6vh); border-top: .14vw solid var(--frame); }
   .card .w { background: linear-gradient(#9c7150, var(--label-d)); color: #fff; border-radius: .4vw; text-align: center; font-family: var(--title); font-size: 1.9vw; font-weight: 700; line-height: 1.35; white-space: nowrap; text-shadow: 0 .25vh 0 #0005; box-shadow: inset 0 .2vh 0 #fff3; }
+  .card .w.long { font-size: 1.45vw; line-height: 1.76; }
   .card.rev { padding: 0; overflow: hidden; animation: flip .6s cubic-bezier(.3, 1.4, .5, 1); }
   .card.rev svg, .mini svg { display: block; width: 100%; height: 100%; }
   /* Retrato en grises teñido con el color del equipo (duotono) */
@@ -136,6 +137,19 @@
   button.quit:focus { outline-width: .2vw; }
   button.quit.armed { background: #c0392b; border-color: #fff; }
 
+  #head .series { position: absolute; left: 0; top: 4.2vh; font-size: 1.2vw; border-radius: 2vw; padding: .3vh 1vw; background: #0006; border: .14vw solid #fff4; }
+  #head .series b { font-family: var(--title); font-size: 1.6vw; }
+  .clock { font-family: var(--title); font-size: 3.6vw; font-weight: 700; min-width: 8vw; background: #0008; border: .2vw solid #fff5; border-radius: 1vw; padding: 0 1vw; }
+  .clock:empty { display: none; }
+  .clock.low { color: #ff6b5b; border-color: #ff6b5b; animation: blink .5s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .45; } }
+  /* Cartas que algún operativo tiene marcadas, con su avatar */
+  .card.picked { box-shadow: 0 0 0 .35vw #ffd66b, 0 0 2vw #ffd66baa, 0 .7vh 0 #b98a5c; }
+  .card .pk { position: absolute; top: .6vh; left: .5vw; display: flex; z-index: 1; }
+  .card .pk .av { width: 2.6vw; height: 2.6vw; font-size: 1.7vw; margin-right: -.7vw; box-shadow: 0 0 0 .16vw #ffd66b; }
+  .card .pk .av.pic { background-size: 185%; }
+  .lobby .cfg { font-size: 1.4vw; opacity: .85; }
+  .mute { position: fixed; right: 1vw; bottom: 1vh; font-size: 1.2vw; background: #000a; border-radius: 2vw; padding: .4vh 1vw; }
   #toast { position: fixed; left: 50%; bottom: 7vh; transform: translateX(-50%); pointer-events: none; z-index: 3; }
   #toast div { font-family: var(--title); font-size: 3.2vw; font-weight: 700; padding: 1vh 3vw; border-radius: 1.5vw; box-shadow: 0 0 0 .3vw #fff, 0 1vh 3vh #000c; animation: toast 3s forwards; text-transform: uppercase; white-space: nowrap; }
   #toast .blue { background: var(--blue); } #toast .red { background: var(--red); } #toast .neutral { background: var(--neutral); color: #333; } #toast .assassin { background: #000; color: #ff4b4b; }
@@ -150,6 +164,7 @@
     <div id="right" class="side red"></div>
   </div>
   <div id="toast"></div>
+  <div id="mute" class="mute" hidden>🔇 Pulsa OK en el control para activar el sonido</div>
 
 <script>
 const TEAM_NAME = { red: 'ROJO', blue: 'AZUL' };
@@ -167,6 +182,8 @@ function setHTML(id, html) { if (cache[id] !== html) { cache[id] = html; $(id).i
 let code = null;
 let last = null;       // último estado recibido
 let quitArmed = false; // "Terminar partida" pide confirmar con una segunda pulsación
+let skew = 0;          // diferencia entre el reloj del servidor y el de la tele
+let lastTick = null;   // último segundo que hizo tic
 
 async function post(path, body) {
   const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -267,26 +284,52 @@ function log(s) {
   return `<div class="log"><h3>REGISTRO DE LA PARTIDA</h3><div class="rows">${rows}</div></div>`;
 }
 
+function wordsText(s) {
+  const mix = s.settings.mix;
+  const on = s.mixOptions.filter((o) => mix[o.id] > 0);
+  const total = on.reduce((n, o) => n + mix[o.id], 0);
+  if (on.length === 1 && on[0].id === 'random') return 'Palabras clásicas';
+  return on.map((o) => `${Math.round((100 * mix[o.id]) / total)}% ${o.label}`).join(' + ');
+}
+
+function settingsText(s) {
+  const c = s.settings;
+  return [
+    c.bestOf === 1 ? 'Partida única' : `Mejor de ${c.bestOf}`,
+    c.turnSeconds ? `${c.turnSeconds} s por turno` : 'Sin reloj',
+    wordsText(s),
+  ].join(' · ');
+}
+
 function head(s) {
-  const room = `<div class="room">Sala <b>${s.code}</b></div>`
+  const series = s.settings.bestOf > 1
+    ? `<div class="series">Mejor de ${s.settings.bestOf} · <b class="t-blue">${s.score.blue}</b> – <b class="t-red">${s.score.red}</b> · ronda ${s.round}</div>` : '';
+  const room = `<div class="room">Sala <b>${s.code}</b></div>${series}`
     + (s.state === 'playing' ? `<button class="quit ${quitArmed ? 'armed' : ''}" data-act="abort">${quitArmed ? '¿Seguro? Pulsa otra vez' : 'Terminar partida'}</button>` : '');
   if (s.state === 'lobby') return `<h1 class="logo">CLAVE SECRETA</h1>`;
   if (s.state === 'over') {
     const why = s.winReason === 'assassin' ? 'El otro equipo tocó al asesino' : 'Encontraron a todos sus agentes';
-    return `${room}<div><h1 class="t-${s.winner}">🏆 ¡Gana el equipo ${TEAM_NAME[s.winner]}!</h1><div class="sub">${why}</div></div><button data-act="newGame">Nueva partida</button>`;
+    const more = s.settings.bestOf > 1 && !s.seriesOver;
+    const title = more ? `Ronda ${s.round} para el equipo ${TEAM_NAME[s.winner]}`
+      : s.settings.bestOf > 1 ? `¡El equipo ${TEAM_NAME[s.winner]} gana la serie ${s.score[s.winner]}–${s.score[s.winner === 'red' ? 'blue' : 'red']}!`
+      : `¡Gana el equipo ${TEAM_NAME[s.winner]}!`;
+    return `${room}<div><h1 class="t-${s.winner}">🏆 ${title}</h1><div class="sub">${why}</div></div>`
+      + (more ? '<button data-act="next">Siguiente ronda</button>' : '<button data-act="newGame">Nueva partida</button>');
   }
+  const clock = s.deadline ? '<div class="clock" id="clock"></div>' : '';
   if (s.phase === 'clue') {
     const boss = s.players.find((p) => p.team === s.turn && p.role === 'spymaster');
-    return `${room}<h1>${boss ? avatar(boss) : ''}<span class="t-${s.turn}">${esc(boss ? boss.name : 'El jefe')}</span> está dando una pista</h1>`;
+    return `${room}${clock}<h1>${boss ? avatar(boss) : ''}<span class="t-${s.turn}">${esc(boss ? boss.name : 'El jefe')}</span> está dando una pista</h1>`;
   }
   const left = s.guessesLeft === null ? 'intentos sin límite' : `quedan ${s.guessesLeft} intento${s.guessesLeft === 1 ? '' : 's'}`;
-  return `${room}<div class="clue ${s.turn}">${esc(s.clue.word)} <b>${s.clue.num}</b></div>
+  return `${room}${clock}<div class="clue ${s.turn}">${esc(s.clue.word)} <b>${s.clue.num}</b></div>
     <div class="sub">Adivina el equipo <b class="t-${s.turn}">${TEAM_NAME[s.turn]}</b><br>${left}</div>`;
 }
 
 function center(s) {
   if (s.state === 'lobby') {
     const n = s.players.length;
+    const admin = s.players.find((p) => p.id === s.adminId);
     return `<div class="lobby">
       <div class="qr">
         <img src="/qr?room=${s.code}" alt="QR">
@@ -298,26 +341,94 @@ function center(s) {
           <div class="url">${esc(s.joinUrl.replace(/^https?:\/\//, ''))}</div>
         </div>
       </div>
+      <div class="cfg">${admin ? `👑 ${esc(admin.name)} · ` : ''}${esc(settingsText(s))}</div>
       ${s.startProblem
         ? `<div class="warn">${n} jugador${n === 1 ? '' : 'es'} en la sala · ${esc(s.startProblem)}</div>`
         : `<button data-act="start">Empezar partida</button>`}
     </div>`;
   }
-  return `<div class="board">${s.cards.map((c, i) => c.revealed
-    ? `<div class="card rev ${c.type}">${art(c.type, i, c.agent)}<div class="tag">${esc(c.word)}</div></div>`
-    : `<div class="card ${c.type ? 'key ' + c.type : ''}"><div class="in"><div class="w">${esc(c.word)}</div></div></div>`).join('')}</div>`;
+  return `<div class="board">${s.cards.map((c, i) => {
+    if (c.revealed) return `<div class="card rev ${c.type}">${art(c.type, i, c.agent)}<div class="tag">${esc(c.word)}</div></div>`;
+    const pickers = s.picks.filter((k) => k.index === i).map((k) => s.players.find((p) => p.id === k.id)).filter(Boolean);
+    const marks = pickers.length ? `<span class="pk">${pickers.map(avatar).join('')}</span>` : '';
+    return `<div class="card ${c.type ? 'key ' + c.type : ''} ${pickers.length ? 'picked' : ''}">${marks}<div class="in"><div class="w ${c.word.length > 9 ? 'long' : ''}">${esc(c.word)}</div></div></div>`;
+  }).join('')}</div>`;
 }
 
+// ---------- sonidos (sintetizados, sin archivos) ----------
+
+let audio = null;
+try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+
+function tone(freq, at, dur, type = 'sine', vol = 0.16) {
+  if (!audio || audio.state !== 'running') return;
+  const osc = audio.createOscillator(), gain = audio.createGain();
+  const t0 = audio.currentTime + at;
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(vol, t0);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  osc.connect(gain).connect(audio.destination);
+  osc.start(t0);
+  osc.stop(t0 + dur);
+}
+
+const SFX = {
+  start: () => { tone(392, 0, 0.15); tone(523, 0.15, 0.15); tone(659, 0.3, 0.3); },
+  clue: () => { tone(523, 0, 0.1); tone(784, 0.1, 0.1); tone(1047, 0.2, 0.25); },
+  ok: () => { tone(660, 0, 0.12); tone(880, 0.1, 0.22); },
+  miss: () => { tone(300, 0, 0.3, 'triangle', 0.2); },
+  enemy: () => { tone(330, 0, 0.16, 'sawtooth', 0.12); tone(220, 0.15, 0.35, 'sawtooth', 0.12); },
+  assassin: () => { tone(110, 0, 1.1, 'sawtooth', 0.22); tone(82, 0.25, 1.1, 'square', 0.12); tone(55, 0.5, 1.2, 'sawtooth', 0.2); },
+  time: () => { tone(440, 0, 0.14, 'square', 0.1); tone(440, 0.2, 0.14, 'square', 0.1); tone(330, 0.4, 0.45, 'square', 0.1); },
+  tick: () => tone(1000, 0, 0.05, 'square', 0.05),
+  win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.15, 0.35)),
+};
+const play = (name) => SFX[name] && SFX[name]();
+
+// Los navegadores no dejan sonar nada hasta la primera pulsación.
+function unlockAudio() {
+  if (audio && audio.state === 'suspended') audio.resume().then(showMute);
+}
+function showMute() { $('mute').hidden = !audio || audio.state === 'running'; }
+document.addEventListener('keydown', unlockAudio);
+document.addEventListener('pointerdown', unlockAudio);
+
+function sounds(prev, s) {
+  if (!prev || prev.code !== s.code) return; // nada al cargar la página
+  if (prev.state === 'lobby' && s.state === 'playing') play('start');
+  if (s.state !== 'lobby' && s.last && (!prev.last || prev.last.seq !== s.last.seq)) play(s.last.sfx);
+  if (s.state === 'playing' && s.clue && (!prev.clue || prev.clue.word !== s.clue.word || prev.turn !== s.turn)) play('clue');
+  if (prev.state === 'playing' && s.state === 'over') setTimeout(() => play('win'), s.winReason === 'assassin' ? 1600 : 500);
+}
+
+// ---------- reloj ----------
+
+function tick() {
+  const el = $('clock');
+  if (!el || !last || !last.deadline) { lastTick = null; return; }
+  const left = Math.max(0, Math.ceil((last.deadline - (Date.now() + skew)) / 1000));
+  el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  el.classList.toggle('low', left <= 10);
+  if (left <= 10 && left > 0 && left !== lastTick) play('tick');
+  lastTick = left;
+}
+setInterval(tick, 250);
+
 function render(s) {
+  sounds(last, s);
   last = s;
+  skew = s.now - Date.now();
   if (s.state !== 'playing') quitArmed = false;
   setHTML('head', head(s));
   setHTML('left', side(s, 'blue'));
   setHTML('right', side(s, 'red') + log(s));
   setHTML('center', center(s));
   setHTML('toast', s.last && s.state !== 'lobby' ? `<div class="${s.last.type}" data-seq="${s.last.seq}">${esc(s.last.text)}</div>` : '');
+  tick();
+  showMute();
   // El control remoto de la tele necesita que el botón tenga el foco.
-  const btn = document.querySelector('button[data-act]');
+  const btn = document.querySelector('button[data-act]:not(.quit)') || document.querySelector('button[data-act]');
   if (btn && document.activeElement !== btn) btn.focus();
 }
 

@@ -78,6 +78,32 @@
   .card.key.assassin { border-color: #ff3b3b; box-shadow: 0 0 12px #ff2b2b; }
 
   #actions { display: flex; flex-direction: column; gap: 8px; }
+  .who.off { opacity: .5; }
+  .kick { background: #0007; color: #fff; box-shadow: none; padding: 0 7px; font-size: 13px; line-height: 20px; border-radius: 50%; margin-left: 4px; font-family: var(--round); }
+  .panel { background: #ffffff14; border: 1px solid #ffffff30; border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .panel h3 { font-family: var(--title); font-size: 18px; text-align: center; }
+  .panel label { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 15px; }
+  .panel select { padding: 8px 10px; font-size: 16px; }
+  .panel textarea { font: inherit; font-size: 16px; border-radius: 12px; border: 0; padding: 10px; width: 100%; resize: vertical; }
+  .hint { font-size: 13px; opacity: .75; }
+  .wordsrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 15px; }
+  .gear { background: #ffffff24; color: #fff; box-shadow: 0 4px 0 #0006; font-size: 22px; padding: 4px 12px; font-family: var(--round); }
+  .gear.on { background: linear-gradient(#ffe69a, #ffc93c); color: #3a2a00; box-shadow: 0 4px 0 #a87a00; }
+  .mix { display: flex; flex-direction: column; gap: 8px; background: #0003; border-radius: 12px; padding: 10px; }
+  .mixrow { display: grid; grid-template-columns: 78px 1fr 44px; align-items: center; gap: 8px; font-size: 15px; }
+  .mixrow b { font-family: var(--title); text-align: right; }
+  .mixrow input { padding: 0; width: 100%; accent-color: #b6ff5c; background: none; }
+  .mixrow.off { opacity: .4; }
+  .card.long { font-size: clamp(8px, 2.3vw, 18px); }
+  .series { text-align: center; font-size: 14px; opacity: .9; }
+  .series b { font-family: var(--title); font-size: 18px; }
+  .clock { font-family: var(--title); font-size: 22px; font-weight: 700; }
+  .clock.low { color: #ff6b5b; animation: blink .5s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .4; } }
+  .card { position: relative; }
+  .card.picked { border-color: #ffd66b; }
+  .card .pk { position: absolute; top: 2px; left: 2px; display: flex; }
+  .card .pk .av { width: 17px; height: 17px; font-size: 11px; margin-right: -5px; box-shadow: 0 0 0 1px #fff; }
   #err { position: fixed; left: 10px; right: 10px; top: 10px; background: #c0392b; border-radius: 12px; padding: 12px; text-align: center; font-weight: 700; display: none; z-index: 5; }
 </style>
 </head>
@@ -102,10 +128,13 @@ function setHTML(id, html) { if (cache[id] !== html) { cache[id] = html; $(id).i
 let token = null;
 let state = null;
 let screen = '';
-let selected = null;  // carta marcada por el operativo, pendiente de confirmar
-let showKey = false;  // el jefe decide cuándo mirar la clave
-let picking = false;  // pantalla de elegir personaje abierta a mano
-let skipped = false;  // prefirió jugar sin personaje
+let skew = 0;           // diferencia entre el reloj del servidor y el de este celular
+let showKey = false;    // el jefe decide cuándo mirar la clave
+let picking = false;    // pantalla de elegir personaje abierta a mano
+let skipped = false;    // prefirió jugar sin personaje
+let wordsOpen = false;  // el admin tiene abierto el editor de palabras propias
+let mixOpen = false;    // el admin tiene abierta la mezcla de mazos (⚙)
+let wasMyTurn = false;
 
 try { token = localStorage.getItem(KEY); } catch {}
 
@@ -131,7 +160,7 @@ function show(name, html) {
   if (screen !== name) { screen = name; delete cache.app; }
   const typed = {};
   let focused = null;
-  for (const el of document.querySelectorAll('#app input[id], #app select[id]')) {
+  for (const el of document.querySelectorAll('#app input[id]:not([type=range]), #app select[id], #app textarea[id]')) {
     typed[el.id] = el.value;
     if (el === document.activeElement) focused = el.id;
   }
@@ -140,6 +169,7 @@ function show(name, html) {
   if (before === cache.app) return;
   for (const id in typed) { const el = $(id); if (el) el.value = typed[id]; }
   if (focused && $(focused)) $(focused).focus();
+  tick();
 }
 
 async function init() {
@@ -148,7 +178,7 @@ async function init() {
   if (r.status === 404 && /sala/i.test(r.error)) {
     return show('gone', `<div class="center"><h1>Clave Secreta</h1><p>La sala ${esc(code)} ya no existe.<br>Escanea de nuevo el QR de la tele.</p></div>`);
   }
-  if (r.error) { token = null; try { localStorage.removeItem(KEY); } catch {} }
+  if (r.error) { token = null; state = null; try { localStorage.removeItem(KEY); } catch {} }
   if (!token) {
     return show('name', `<form class="center" id="joinForm">
       <h1>Clave Secreta</h1><p>Sala ${esc(code)}</p>
@@ -156,9 +186,22 @@ async function init() {
       <button>Entrar</button></form>`);
   }
   const es = new EventSource(`/api/events?room=${code}&token=${token}`);
-  es.onmessage = (e) => { state = JSON.parse(e.data); render(); };
+  es.onmessage = (e) => { state = JSON.parse(e.data); skew = state.now - Date.now(); render(); };
   es.onerror = () => { if (es.readyState === EventSource.CLOSED) setTimeout(init, 2000); };
 }
+
+// ---------- reloj ----------
+
+function tick() {
+  const els = document.querySelectorAll('.clock');
+  if (!els.length) return;
+  const left = state && state.deadline ? Math.max(0, Math.ceil((state.deadline - (Date.now() + skew)) / 1000)) : null;
+  for (const el of els) {
+    el.textContent = left === null ? '' : `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    el.classList.toggle('low', left !== null && left <= 10);
+  }
+}
+setInterval(tick, 250);
 
 // ---------- personaje ----------
 
@@ -175,9 +218,31 @@ function picker(s) {
 
 // ---------- sala de espera ----------
 
+function wordsText(s) {
+  const mix = s.settings.mix;
+  const on = s.mixOptions.filter((o) => mix[o.id] > 0);
+  const total = on.reduce((n, o) => n + mix[o.id], 0);
+  if (on.length === 1 && on[0].id === 'random') return 'Palabras clásicas';
+  return on.map((o) => `${Math.round((100 * mix[o.id]) / total)}% ${o.label}`).join(' + ');
+}
+
+function settingsText(s) {
+  const t = s.settings;
+  return [
+    t.bestOf === 1 ? 'Partida única' : `Mejor de ${t.bestOf}`,
+    t.turnSeconds ? `${t.turnSeconds} s por turno` : 'Sin reloj',
+    wordsText(s),
+  ].join(' · ');
+}
+
+function who(s, p) {
+  const kick = s.me.isAdmin && p.id !== s.me.id
+    ? `<button class="kick" data-act="kick" data-id="${p.id}" data-name="${esc(p.name)}" aria-label="Expulsar">✕</button>` : '';
+  return `<span class="who ${p.id === s.me.id ? 'mine' : ''} ${p.connected ? '' : 'off'}">${avatar(p)}${p.id === s.adminId ? '👑 ' : ''}${esc(p.name)}${kick}</span>`;
+}
+
 function slot(s, team, role, label) {
-  const list = s.players.filter((p) => p.team === team && p.role === role)
-    .map((p) => `<span class="who ${p.id === s.me.id ? 'mine' : ''}">${avatar(p)}${esc(p.name)}</span>`).join('');
+  const list = s.players.filter((p) => p.team === team && p.role === role).map((p) => who(s, p)).join('');
   return `<div class="slot"><b>${label}</b>${list || '—'}</div>`;
 }
 
@@ -194,14 +259,57 @@ function teamBox(s, team) {
   </div>`;
 }
 
+// Mezcla de mazos: cada barra es el peso del mazo; el % es su parte del total.
+function mixPanel(s) {
+  const mix = s.settings.mix;
+  const total = s.mixOptions.reduce((n, o) => n + mix[o.id], 0) || 1;
+  const rows = s.mixOptions.map((o) => {
+    const off = o.id === 'propias' && !s.settings.customCount;
+    return `<div class="mixrow ${off ? 'off' : ''}"><span>${o.label}</span>
+      <input type="range" id="mix-${o.id}" data-mix="${o.id}" min="0" max="100" step="10" value="${mix[o.id]}" ${off ? 'disabled' : ''}>
+      <b id="pct-${o.id}">${Math.round((100 * mix[o.id]) / total)}%</b></div>`;
+  }).join('');
+  return `<div class="mix">
+    <div class="hint">Mueve las barras: el porcentaje es cuántas de las 25 cartas salen de cada mazo.</div>
+    ${rows}
+    <button class="ghost" data-act="toggleWords">${wordsOpen ? 'Cerrar' : 'Cargar palabras propias'}${s.settings.customCount ? ` (${s.settings.customCount})` : ''}</button>
+    ${wordsOpen ? `<textarea id="setWords" rows="5" placeholder="PERRO; ASADO; MATE; …">${esc(s.me.customText || '')}</textarea>
+      <div class="hint">Sepáralas con punto y coma. Máximo 12 letras cada una. Si no alcanzan, se completa con las clásicas.</div>
+      <div class="row"><button data-act="saveWords">Guardar</button><button class="ghost" data-act="clearWords">Borrar todas</button></div>` : ''}
+    <button class="ghost" data-act="resetMix">Volver a 100% random</button>
+  </div>`;
+}
+
+function adminPanel(s) {
+  const t = s.settings;
+  const opt = (value, label, current) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`;
+  return `<div class="panel">
+    <h3>👑 Ajustes de la partida</h3>
+    <label>Tiempo por turno
+      <select id="setTime">${[[0, 'Sin reloj'], [60, '1 minuto'], [90, '1 min 30'], [120, '2 minutos'], [180, '3 minutos'], [240, '4 minutos']].map(([v, l]) => opt(v, l, t.turnSeconds)).join('')}</select></label>
+    ${t.turnSeconds ? '<div class="hint">El equipo que abre tiene 1 minuto extra en su primer turno, porque le toca una carta más.</div>' : ''}
+    <label>Formato
+      <select id="setBo">${[[1, 'Partida única'], [3, 'Mejor de 3'], [5, 'Mejor de 5']].map(([v, l]) => opt(v, l, t.bestOf)).join('')}</select></label>
+    <div class="wordsrow"><span>Palabras: <b>${esc(wordsText(s))}</b></span><button class="gear ${mixOpen ? 'on' : ''}" data-act="toggleMix" aria-label="Personalizar palabras">⚙</button></div>
+    ${mixOpen ? mixPanel(s) : ''}
+  </div>`;
+}
+
 function lobby(s) {
+  const loose = s.players.filter((p) => !p.team);
+  const admin = s.players.find((p) => p.id === s.adminId);
+  let foot;
+  if (s.state !== 'lobby') foot = '<div class="warn">La partida ya empezó: entra como operativo</div>';
+  else if (s.startProblem) foot = `<div class="warn">${esc(s.startProblem)}</div>`;
+  else if (s.me.isAdmin) foot = '<button data-act="start">Empezar partida</button>';
+  else foot = `<div class="warn">Esperando a que ${esc(admin ? admin.name : 'el admin')} empiece</div>`;
   return `<h1>Elige tu equipo</h1>
     <div class="me">${avatar(s.me)}Hola, ${esc(s.me.name)} · Sala ${s.code}</div>
     ${s.agents.length ? `<button class="ghost" data-act="pick">${s.me.agent ? 'Cambiar personaje' : 'Elegir personaje'}</button>` : ''}
     ${teamBox(s, 'blue')}${teamBox(s, 'red')}
-    ${s.state !== 'lobby' ? '<div class="warn">La partida ya empezó: entra como operativo</div>'
-      : s.startProblem ? `<div class="warn">${esc(s.startProblem)}</div>`
-      : `<button data-act="start">Empezar partida</button>`}`;
+    ${loose.length ? `<div class="slot"><b>SIN EQUIPO</b>${loose.map((p) => who(s, p)).join('')}</div>` : ''}
+    ${s.me.isAdmin && s.state === 'lobby' ? adminPanel(s) : `<div class="me">${esc(settingsText(s))}</div>`}
+    ${foot}`;
 }
 
 // ---------- partida ----------
@@ -210,41 +318,55 @@ function statusHtml(s) {
   const me = s.me;
   if (s.state === 'over') {
     const why = s.winReason === 'assassin' ? 'El otro equipo tocó al asesino' : 'Encontraron a todos sus agentes';
-    return `<div class="big t-${s.winner}">¡Gana el equipo ${TEAM_NAME[s.winner]}!</div><div class="small">${why}</div>`;
+    const series = s.settings.bestOf > 1;
+    const title = series && s.seriesOver ? `¡El equipo ${TEAM_NAME[s.winner]} gana la serie!`
+      : series ? `Ronda ${s.round} para el equipo ${TEAM_NAME[s.winner]}` : `¡Gana el equipo ${TEAM_NAME[s.winner]}!`;
+    return `<div class="big t-${s.winner}">${title}</div><div class="small">${why}</div>`;
   }
+  const clock = s.deadline ? '<div class="clock"></div>' : '';
   const mine = s.turn === me.team;
   if (s.phase === 'clue') {
-    if (mine && me.role === 'spymaster') return `<div class="big">Tu turno: da una pista</div><div class="small">Una palabra y cuántas cartas señala</div>`;
+    if (mine && me.role === 'spymaster') return `${clock}<div class="big">Tu turno: da una pista</div><div class="small">Una palabra y cuántas cartas señala</div>`;
     const boss = s.players.find((p) => p.team === s.turn && p.role === 'spymaster');
-    return `<div class="big">${mine ? '' : 'Espera tu turno, '}<span class="t-${s.turn}">${esc(boss ? boss.name : 'el jefe')}</span> está dando una pista</div>`;
+    return `${clock}<div class="big">${mine ? '' : 'Espera tu turno, '}<span class="t-${s.turn}">${esc(boss ? boss.name : 'el jefe')}</span> está dando una pista</div>`;
   }
   const left = s.guessesLeft === null ? 'sin límite de intentos' : `quedan ${s.guessesLeft} intento${s.guessesLeft === 1 ? '' : 's'}`;
-  const who = mine && me.role === 'operative' ? 'Toca una palabra y confirma' : mine ? 'Tus operativos están eligiendo' : `Adivina el equipo ${TEAM_NAME[s.turn]}`;
-  return `<div class="clue ${s.turn}">${esc(s.clue.word)} <b>${s.clue.num}</b></div><div class="small">${who} · ${left}</div>`;
+  const hint = mine && me.role === 'operative' ? 'Marca una palabra y confirma' : mine ? 'Tus operativos están eligiendo' : `Adivina el equipo ${TEAM_NAME[s.turn]}`;
+  return `${clock}<div class="clue ${s.turn}">${esc(s.clue.word)} <b>${s.clue.num}</b></div><div class="small">${hint} · ${left}</div>`;
 }
 
 function game(s) {
   const me = s.me;
   const boss = me.role === 'spymaster';
   const canGuess = s.state === 'playing' && s.phase === 'guess' && s.turn === me.team && me.role === 'operative';
-  if (!canGuess || (selected !== null && s.cards[selected].revealed)) selected = null;
   const keyOn = s.state === 'over' || (boss && showKey);
+  const mine = s.picks.find((k) => k.id === me.id);
+  const myPick = mine ? mine.index : null;
 
   const cards = s.cards.map((c, i) => {
     const cls = ['card'];
+    if (c.word.length > 9) cls.push('long');
+    let marks = '';
     if (c.revealed) cls.push('rev', c.type);
     else {
       if (keyOn && c.type) cls.push('key', c.type);
       if (canGuess) cls.push('tap');
-      if (selected === i) cls.push('sel');
+      // Quiénes del equipo tienen marcada esta carta.
+      const pickers = s.picks.filter((k) => k.index === i).map((k) => s.players.find((p) => p.id === k.id)).filter(Boolean);
+      if (pickers.length) { cls.push('picked'); marks = `<span class="pk">${pickers.map(avatar).join('')}</span>`; }
+      if (myPick === i) cls.push('sel');
     }
-    return `<div class="${cls.join(' ')}" ${canGuess && !c.revealed ? `data-card="${i}"` : ''}>${esc(c.word)}</div>`;
+    return `<div class="${cls.join(' ')}" ${canGuess && !c.revealed ? `data-card="${i}"` : ''}>${marks}${esc(c.word)}</div>`;
   }).join('');
 
   let actions = '';
   if (s.state === 'over') {
-    actions = `<button data-act="newGame">Nueva partida</button>`;
+    const more = s.settings.bestOf > 1 && !s.seriesOver;
+    if (!me.isAdmin) actions = '<div class="warn">Esperando al admin…</div>';
+    else if (more) actions = '<button data-act="next">Siguiente ronda</button><button class="ghost" data-act="newGame">Volver a la sala</button>';
+    else actions = '<button data-act="newGame">Nueva partida</button>';
   } else {
+    if (me.canTakeBoss) actions += '<button class="on" data-act="takeBoss">Tu jefe se desconectó: ocupar su lugar</button>';
     if (boss && s.phase === 'clue' && s.turn === me.team) {
       actions += `<form class="row" id="clueForm">
         <input id="clueWord" placeholder="Pista" maxlength="20" autocomplete="off" autocapitalize="characters" required style="flex:3">
@@ -253,15 +375,18 @@ function game(s) {
     }
     if (boss) actions += `<button class="${showKey ? 'on' : 'ghost'}" data-act="toggleKey">${showKey ? '🙈 Ocultar la clave' : '👁 Ver la clave'}</button>`;
     if (canGuess) {
-      actions += selected !== null
-        ? `<div class="row"><button data-act="confirm">Revelar ${esc(s.cards[selected].word)}</button><button class="ghost" data-act="cancel" style="flex:.5">Cancelar</button></div>`
+      actions += myPick !== null
+        ? `<div class="row"><button data-act="confirm" data-index="${myPick}">Revelar ${esc(s.cards[myPick].word)}</button><button class="ghost" data-act="cancel" style="flex:.5">Cancelar</button></div>`
         : `<button class="ghost" data-act="endTurn" ${s.guessesMade ? '' : 'disabled'}>Terminar turno</button>`;
     }
   }
 
+  const series = s.settings.bestOf > 1
+    ? `<div class="series">Mejor de ${s.settings.bestOf} · <b class="t-blue">${s.score.blue}</b> – <b class="t-red">${s.score.red}</b> · ronda ${s.round}</div>` : '';
   return `<div class="score"><span class="t-blue">AZUL ${s.remaining.blue}</span>
       <span class="me">${esc(me.name)} · ${boss ? 'jefe' : 'operativo'} <b class="t-${me.team}">${TEAM_NAME[me.team]}</b></span>
       <span class="t-red">${s.remaining.red} ROJO</span></div>
+    ${series}
     <div id="status">${statusHtml(s)}</div>
     <div class="board">${cards}</div>
     <div id="actions">${actions}</div>`;
@@ -270,7 +395,13 @@ function game(s) {
 function render() {
   const s = state;
   if (!s) return;
-  if (s.state === 'lobby') { selected = null; showKey = false; }
+  if (s.state === 'lobby') showKey = false;
+  // Aviso con vibración cuando empieza a tocarte.
+  const myTurn = s.state === 'playing' && s.turn === s.me.team
+    && (s.phase === 'clue' ? s.me.role === 'spymaster' : s.me.role === 'operative');
+  if (myTurn && !wasMyTurn && navigator.vibrate) navigator.vibrate(200);
+  wasMyTurn = myTurn;
+
   if (s.agents.length && (picking || (!s.me.agent && !skipped && !s.me.team))) show('picker', picker(s));
   else if (s.state === 'lobby' || !s.me.team) show('lobby', lobby(s));
   else show('game', game(s));
@@ -280,7 +411,11 @@ function render() {
 
 document.addEventListener('click', (e) => {
   const card = e.target.closest('[data-card]');
-  if (card) { const i = Number(card.dataset.card); selected = selected === i ? null : i; return render(); }
+  if (card) {
+    const index = Number(card.dataset.card);
+    const mine = state.picks.find((k) => k.id === state.me.id);
+    return api('pick', { index: mine && mine.index === index ? null : index });
+  }
   const pick = e.target.closest('[data-agent]');
   if (pick) { picking = false; return api('setAgent', { agent: pick.dataset.agent }); }
   const b = e.target.closest('[data-act]');
@@ -289,10 +424,35 @@ document.addEventListener('click', (e) => {
   if (act === 'pick') { picking = true; return render(); }
   if (act === 'noAgent') { picking = false; skipped = true; api('setAgent', { agent: null }); return render(); }
   if (act === 'toggleKey') { showKey = !showKey; return render(); }
-  if (act === 'cancel') { selected = null; return render(); }
-  if (act === 'confirm') { const index = selected; selected = null; return api('guess', { index }); }
+  if (act === 'toggleWords') { wordsOpen = !wordsOpen; return render(); }
+  if (act === 'toggleMix') { mixOpen = !mixOpen; return render(); }
+  if (act === 'resetMix') return api('settings', { mix: { random: 100 } });
+  if (act === 'saveWords') return api('settings', { customWords: $('setWords').value }).then((r) => { if (!r.error) { wordsOpen = false; render(); } });
+  if (act === 'clearWords') { $('setWords').value = ''; return api('settings', { customWords: '' }); }
+  if (act === 'cancel') return api('pick', { index: null });
+  if (act === 'confirm') return api('guess', { index: Number(b.dataset.index) });
   if (act === 'setTeam') return api('setTeam', { team: b.dataset.team, role: b.dataset.role });
+  if (act === 'kick') { if (confirm(`¿Expulsar a ${b.dataset.name}?`)) api('kick', { id: Number(b.dataset.id) }); return; }
   api(act);
+});
+
+// Mientras se arrastra una barra, los porcentajes se recalculan al instante.
+function readMix() {
+  const mix = {};
+  for (const el of document.querySelectorAll('[data-mix]')) mix[el.dataset.mix] = Number(el.value);
+  return mix;
+}
+document.addEventListener('input', (e) => {
+  if (!e.target.dataset.mix) return;
+  const mix = readMix();
+  const total = Object.values(mix).reduce((n, v) => n + v, 0) || 1;
+  for (const id in mix) $('pct-' + id).textContent = Math.round((100 * mix[id]) / total) + '%';
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.dataset.mix) api('settings', { mix: readMix() });
+  if (e.target.id === 'setTime') api('settings', { turnSeconds: Number(e.target.value) });
+  if (e.target.id === 'setBo') api('settings', { bestOf: Number(e.target.value) });
 });
 
 document.addEventListener('submit', async (e) => {
