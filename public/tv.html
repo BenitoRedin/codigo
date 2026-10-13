@@ -171,9 +171,11 @@ const TEAM_NAME = { red: 'ROJO', blue: 'AZUL' };
 const AVATARS = ['🦊', '🐼', '🐸', '🐵', '🦁', '🐯', '🐨', '🐙', '🦉', '🐺', '🐱', '🐶', '🦄', '🐲', '🐧', '🐻'];
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Un personaje es un retrato de la galería o una foto propia ("foto:<id>:<versión>").
+const agentUrl = (a) => (a.startsWith('foto:') ? `/photo/${code}/${a.split(':')[1]}?v=${a.split(':')[2]}` : `/agents/${a}`);
 // Quien eligió personaje usa su retrato; el resto, un animal.
 const avatar = (p) => p.agent
-  ? `<span class="av pic" style="background-image:url(/agents/${p.agent})"></span>`
+  ? `<span class="av pic" style="background-image:url(${agentUrl(p.agent)})"></span>`
   : `<span class="av">${AVATARS[p.id % AVATARS.length]}</span>`;
 const cache = {};
 // Solo toca el DOM si cambió, así no se reinician animaciones ni se pierde el foco.
@@ -214,7 +216,7 @@ const PALETTE = {
 
 // agent = personaje del equipo dueño de la carta; sin él se usa la ilustración.
 function art(type, i, agent) {
-  if (agent) return `<div class="photo ${type}"><img src="/agents/${agent}" alt=""></div>`;
+  if (agent) return `<div class="photo ${type}"><img src="${agentUrl(agent)}" alt=""></div>`;
   const c = PALETTE[type];
   const id = `g-${type}`;
   const bars = [14, 34, 54, 140, 160, 180].map((x) => `<rect x="${x}" y="8" width="7" height="130"/>`).join('');

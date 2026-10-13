@@ -101,6 +101,7 @@ function createRoom(req) {
     seriesOver: false,
     deadline: null,
     timer: null,
+    photos: new Map(), // id de jugador -> JPEG de su foto de agente (solo en memoria)
     streams: new Set(),
     touched: Date.now(),
   };
@@ -506,6 +507,20 @@ function sendFile(res, name) {
   });
 }
 
+// Cuerpo binario con tope de tamaño (fotos de agente). Devuelve null si se pasa.
+function readRaw(req, limit) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (d) => {
+      size += d.length;
+      if (size > limit) { resolve(null); req.destroy(); } else chunks.push(d);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', () => resolve(null));
+  });
+}
+
 function readBody(req) {
   return new Promise((resolve) => {
     let raw = '';
@@ -537,6 +552,30 @@ async function handle(req, res) {
       res.writeHead(200, { 'Content-Type': AGENT_MIME[name.split('.').pop().toLowerCase()], 'Cache-Control': 'public, max-age=3600' });
       res.end(data);
     });
+  }
+
+  // Foto sacada con la cámara del celular: se guarda en la sala y pasa a ser el personaje del jugador.
+  if (req.method === 'POST' && p === '/api/photo') {
+    const room = rooms.get((url.searchParams.get('room') || '').toUpperCase());
+    const player = room && room.players.find((x) => x.token === url.searchParams.get('token'));
+    if (!player) return sendJson(res, 404, { error: 'Jugador desconocido' });
+    const jpeg = await readRaw(req, 300000);
+    if (!jpeg) return sendJson(res, 413, { error: 'La foto es demasiado grande' });
+    if (jpeg.length < 100 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8 || jpeg[2] !== 0xff) return sendJson(res, 400, { error: 'La foto no es válida' });
+    room.photos.set(player.id, jpeg);
+    player.photoVersion = (player.photoVersion || 0) + 1;
+    player.agent = `foto:${player.id}:${player.photoVersion}`;
+    broadcast(room);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (req.method === 'GET' && p.startsWith('/photo/')) {
+    const [, , roomCode, id] = p.split('/');
+    const room = rooms.get(String(roomCode || '').toUpperCase());
+    const jpeg = room && room.photos.get(Number(id));
+    if (!jpeg) return sendJson(res, 404, { error: 'No encontrado' });
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600' });
+    return res.end(jpeg);
   }
 
   if (req.method === 'GET' && p === '/qr') {
