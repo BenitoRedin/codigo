@@ -21,9 +21,12 @@ const rooms = new Map();
 const AGENTS_DIR = path.join(__dirname, 'public', 'agents');
 const AGENT_FILE = /^[\w-]+\.(png|jpe?g|webp)$/i;
 const AGENT_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
-function listAgents() {
-  try { return fs.readdirSync(AGENTS_DIR).filter((f) => AGENT_FILE.test(f)).sort(); } catch { return []; }
+// En la misma carpeta: agente-* son elegibles por los jugadores, civil-* van en las cartas
+// neutrales y asesino-* en la carta negra.
+function listImages(prefix) {
+  try { return fs.readdirSync(AGENTS_DIR).filter((f) => AGENT_FILE.test(f) && f.startsWith(prefix)).sort(); } catch { return []; }
 }
+const listAgents = () => listImages('agente-');
 
 // ---------- utilidades ----------
 
@@ -94,12 +97,15 @@ const remaining = (room, team) => room.cards.filter((c) => c.type === team && !c
 
 // Las cartas de un equipo van rotando entre los personajes de ese equipo, empezando por el del jefe.
 function teamAgent(room, team) {
-  if (!TEAMS.includes(team)) return null;
+  const shown = room.cards.filter((c) => c.type === team && c.revealed).length - 1;
+  if (!TEAMS.includes(team)) {
+    const images = listImages(team === 'neutral' ? 'civil-' : 'asesino-');
+    return images.length ? images[(room.civilOffset + shown) % images.length] : null;
+  }
   const members = room.players.filter((p) => p.team === team && p.agent)
     .sort((a, b) => (b.role === 'spymaster') - (a.role === 'spymaster'));
   const pool = [...new Set(members.map((p) => p.agent))];
   if (!pool.length) return null;
-  const shown = room.cards.filter((c) => c.type === team && c.revealed).length - 1;
   return pool[shown % pool.length];
 }
 
@@ -131,6 +137,7 @@ function startGame(room) {
   room.winReason = null;
   room.last = null;
   room.log = [];
+  room.civilOffset = crypto.randomInt(1000); // para que no empiece siempre el mismo civil
 }
 
 function endTurn(room) {
