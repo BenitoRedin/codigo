@@ -343,7 +343,7 @@ function center(s) {
           <div class="url">${esc(s.joinUrl.replace(/^https?:\/\//, ''))}</div>
         </div>
       </div>
-      <div class="cfg">${admin ? `👑 ${esc(admin.name)} · ` : ''}${esc(settingsText(s))}</div>
+      <div class="cfg">${admin ? `Admin: ${esc(admin.name)} · ` : ''}${esc(settingsText(s))}</div>
       ${s.startProblem
         ? `<div class="warn">${n} jugador${n === 1 ? '' : 'es'} en la sala · ${esc(s.startProblem)}</div>`
         : `<button data-act="start">Empezar partida</button>`}

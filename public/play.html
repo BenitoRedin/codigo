@@ -79,6 +79,7 @@
 
   #actions { display: flex; flex-direction: column; gap: 8px; }
   .who.off { opacity: .5; }
+  .adm { font-style: normal; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; background: #ffffff2e; border-radius: 6px; padding: 1px 5px; margin-left: 2px; }
   .kick { background: #0007; color: #fff; box-shadow: none; padding: 0 7px; font-size: 13px; line-height: 20px; border-radius: 50%; margin-left: 4px; font-family: var(--round); }
   .panel { background: #ffffff14; border: 1px solid #ffffff30; border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
   .panel h3 { font-family: var(--title); font-size: 18px; text-align: center; }
@@ -338,7 +339,7 @@ function settingsText(s) {
 function who(s, p) {
   const kick = s.me.isAdmin && p.id !== s.me.id
     ? `<button class="kick" data-act="kick" data-id="${p.id}" data-name="${esc(p.name)}" aria-label="Expulsar">✕</button>` : '';
-  return `<span class="who ${p.id === s.me.id ? 'mine' : ''} ${p.connected ? '' : 'off'}">${avatar(p)}${p.id === s.adminId ? '👑 ' : ''}${esc(p.name)}${kick}</span>`;
+  return `<span class="who ${p.id === s.me.id ? 'mine' : ''} ${p.connected ? '' : 'off'}">${avatar(p)}${esc(p.name)}${p.id === s.adminId ? '<i class="adm">admin</i>' : ''}${kick}</span>`;
 }
 
 function slot(s, team, role, label) {
@@ -384,7 +385,7 @@ function adminPanel(s) {
   const t = s.settings;
   const opt = (value, label, current) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`;
   return `<div class="panel">
-    <h3>👑 Ajustes de la partida</h3>
+    <h3>Ajustes de la partida</h3>
     <label>Tiempo por turno
       <select id="setTime">${[[0, 'Sin reloj'], [60, '1 minuto'], [90, '1 min 30'], [120, '2 minutos'], [180, '3 minutos'], [240, '4 minutos']].map(([v, l]) => opt(v, l, t.turnSeconds)).join('')}</select></label>
     ${t.turnSeconds ? '<div class="hint">El equipo que abre tiene 1 minuto extra en su primer turno, porque le toca una carta más.</div>' : ''}
