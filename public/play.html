@@ -110,6 +110,7 @@
   @keyframes blink { 50% { opacity: .4; } }
   .card { position: relative; }
   .card.picked { border-color: #ffd66b; }
+  .card.own { opacity: .5; }
   .card .pk { position: absolute; top: 2px; left: 2px; display: flex; }
   .card .pk .av { width: 17px; height: 17px; font-size: 11px; margin-right: -5px; box-shadow: 0 0 0 1px #fff; }
   #err { position: fixed; left: 10px; right: 10px; top: 10px; background: #c0392b; border-radius: 12px; padding: 12px; text-align: center; font-weight: 700; display: none; z-index: 5; }
@@ -327,7 +328,13 @@ function wordsText(s) {
   return on.map((o) => `${Math.round((100 * mix[o.id]) / total)}% ${o.label}`).join(' + ');
 }
 
+const LEVEL = { facil: 'Fácil', media: 'Media', dificil: 'Difícil' };
+
 function settingsText(s) {
+  if (s.settings.mode === 'duo') {
+    const c = s.settings;
+    return ['Modo dúo', `${c.duoWords} palabras cada uno`, `${c.duoTurns} turnos`, `Dificultad ${LEVEL[c.difficulty].toLowerCase()}`, c.turnSeconds ? `${c.turnSeconds} s por turno` : 'Sin reloj'].join(' · ');
+  }
   const t = s.settings;
   return [
     t.bestOf === 1 ? 'Partida única' : `Mejor de ${t.bestOf}`,
@@ -383,16 +390,38 @@ function mixPanel(s) {
 
 function adminPanel(s) {
   const t = s.settings;
+  const duo = t.mode === 'duo';
   const opt = (value, label, current) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`;
+  const select = (id, label, options, current) => `<label>${label}
+      <select id="${id}">${options.map(([v, l]) => opt(v, l, current)).join('')}</select></label>`;
   return `<div class="panel">
     <h3>Ajustes de la partida</h3>
-    <label>Tiempo por turno
-      <select id="setTime">${[[0, 'Sin reloj'], [60, '1 minuto'], [90, '1 min 30'], [120, '2 minutos'], [180, '3 minutos'], [240, '4 minutos']].map(([v, l]) => opt(v, l, t.turnSeconds)).join('')}</select></label>
-    ${t.turnSeconds ? '<div class="hint">El equipo que abre tiene 1 minuto extra en su primer turno, porque le toca una carta más.</div>' : ''}
-    <label>Formato
-      <select id="setBo">${[[1, 'Partida única'], [3, 'Mejor de 3'], [5, 'Mejor de 5']].map(([v, l]) => opt(v, l, t.bestOf)).join('')}</select></label>
-    <div class="wordsrow"><span>Palabras: <b>${esc(wordsText(s))}</b></span><button class="gear ${mixOpen ? 'on' : ''}" data-act="toggleMix" aria-label="Personalizar palabras">⚙</button></div>
-    ${mixOpen ? mixPanel(s) : ''}
+    ${select('setMode', 'Modo', [['teams', 'Equipos'], ['duo', 'Dúo contra la máquina']], t.mode)}
+    ${select('setTime', 'Tiempo por turno', [[0, 'Sin reloj'], [60, '1 minuto'], [90, '1 min 30'], [120, '2 minutos'], [180, '3 minutos'], [240, '4 minutos']], t.turnSeconds)}
+    ${duo ? `
+      ${select('setDuoWords', 'Palabras por jugador', [4, 5, 6, 7, 8, 9].map((n) => [n, String(n)]), t.duoWords)}
+      ${select('setDuoTurns', 'Turnos máximos', [5, 6, 7, 8, 9, 10, 11, 12].map((n) => [n, String(n)]), t.duoTurns)}
+      ${select('setDiff', 'Dificultad de palabras', [['facil', 'Fácil (cosas concretas)'], ['media', 'Media (países, famosos…)'], ['dificil', 'Difícil (abstractas)']], t.difficulty)}
+      <div class="hint">Cada uno ve en su clave las palabras que el otro tiene que adivinar y un asesino que el otro no debe tocar.</div>` : `
+      ${t.turnSeconds ? '<div class="hint">El equipo que abre tiene 1 minuto extra en su primer turno, porque le toca una carta más.</div>' : ''}
+      ${select('setBo', 'Formato', [[1, 'Partida única'], [3, 'Mejor de 3'], [5, 'Mejor de 5']], t.bestOf)}
+      <div class="wordsrow"><span>Palabras: <b>${esc(wordsText(s))}</b></span><button class="gear ${mixOpen ? 'on' : ''}" data-act="toggleMix" aria-label="Personalizar palabras">⚙</button></div>
+      ${mixOpen ? mixPanel(s) : ''}`}
+  </div>`;
+}
+
+function duoBox(s) {
+  const seat = (n) => {
+    const p = s.players.find((x) => x.seat === n);
+    return `<div class="slot"><b>JUGADOR ${n}</b>${p ? who(s, p) : '—'}</div>`;
+  };
+  return `<div class="team blue">
+    <h2>DÚO CONTRA LA MÁQUINA</h2>
+    ${seat(1)}${seat(2)}
+    ${s.state === 'lobby' ? `<div class="row">
+      <button data-act="setSeat" data-seat="1">Ser jugador 1</button>
+      <button data-act="setSeat" data-seat="2">Ser jugador 2</button>
+    </div>` : ''}
   </div>`;
 }
 
@@ -400,15 +429,16 @@ function lobby(s) {
   const loose = s.players.filter((p) => !p.team);
   const admin = s.players.find((p) => p.id === s.adminId);
   let foot;
-  if (s.state !== 'lobby') foot = '<div class="warn">La partida ya empezó: entra como operativo</div>';
+  const duo = s.settings.mode === 'duo';
+  if (s.state !== 'lobby') foot = `<div class="warn">${duo ? 'Hay una partida de dúo en curso' : 'La partida ya empezó: entra como operativo'}</div>`;
   else if (s.startProblem) foot = `<div class="warn">${esc(s.startProblem)}</div>`;
   else if (s.me.isAdmin) foot = '<button data-act="start">Empezar partida</button>';
   else foot = `<div class="warn">Esperando a que ${esc(admin ? admin.name : 'el admin')} empiece</div>`;
-  return `<h1>Elige tu equipo</h1>
+  return `<h1>${duo ? 'Modo dúo' : 'Elige tu equipo'}</h1>
     <div class="me">${avatar(s.me)}Hola, ${esc(s.me.name)} · Sala ${s.code}</div>
     ${s.agents.length ? `<button class="ghost" data-act="pick">${s.me.agent ? 'Cambiar personaje' : 'Elegir personaje'}</button>` : ''}
-    ${teamBox(s, 'blue')}${teamBox(s, 'red')}
-    ${loose.length ? `<div class="slot"><b>SIN EQUIPO</b>${loose.map((p) => who(s, p)).join('')}</div>` : ''}
+    ${duo ? duoBox(s) : teamBox(s, 'blue') + teamBox(s, 'red')}
+    ${loose.length ? `<div class="slot"><b>${duo ? 'MIRANDO' : 'SIN EQUIPO'}</b>${loose.map((p) => who(s, p)).join('')}</div>` : ''}
     ${s.me.isAdmin && s.state === 'lobby' ? adminPanel(s) : `<div class="me">${esc(settingsText(s))}</div>`}
     ${foot}`;
 }
@@ -417,6 +447,10 @@ function lobby(s) {
 
 function statusHtml(s) {
   const me = s.me;
+  if (s.state === 'over' && s.duo) {
+    if (s.duo.result === 'win') return `<div class="big t-blue">¡Misión cumplida!</div><div class="small">Lo lograron en ${s.duo.turnNo} de ${s.duo.maxTurns} turnos</div>`;
+    return `<div class="big t-red">${s.winReason === 'assassin' ? 'Tocaron al asesino' : 'Se acabaron los turnos'}</div><div class="small">Quedaron ${s.remaining.blue} palabras sin encontrar</div>`;
+  }
   if (s.state === 'over') {
     const why = s.winReason === 'assassin' ? 'El otro equipo tocó al asesino' : 'Encontraron a todos sus agentes';
     const series = s.settings.bestOf > 1;
@@ -432,7 +466,7 @@ function statusHtml(s) {
     return `${clock}<div class="big">${mine ? '' : 'Espera tu turno, '}<span class="t-${s.turn}">${esc(boss ? boss.name : 'el jefe')}</span> está dando una pista</div>`;
   }
   const left = s.guessesLeft === null ? 'sin límite de intentos' : `quedan ${s.guessesLeft} intento${s.guessesLeft === 1 ? '' : 's'}`;
-  const hint = mine && me.role === 'operative' ? 'Marca una palabra y confirma' : mine ? 'Tus operativos están eligiendo' : `Adivina el equipo ${TEAM_NAME[s.turn]}`;
+  const hint = mine && me.role === 'operative' ? 'Marca una palabra y confirma' : mine ? (s.duo ? 'Tu compañero está eligiendo' : 'Tus operativos están eligiendo') : `Adivina el equipo ${TEAM_NAME[s.turn]}`;
   return `${clock}<div class="clue ${s.turn}">${esc(s.clue.word)} <b>${s.clue.num}</b></div><div class="small">${hint} · ${left}</div>`;
 }
 
@@ -440,7 +474,9 @@ function game(s) {
   const me = s.me;
   const boss = me.role === 'spymaster';
   const canGuess = s.state === 'playing' && s.phase === 'guess' && s.turn === me.team && me.role === 'operative';
-  const keyOn = s.state === 'over' || (boss && showKey);
+  // En dúo los dos tienen clave propia, den la pista o adivinen.
+  const hasKey = boss || !!s.duo;
+  const keyOn = s.state === 'over' || (hasKey && showKey);
   const mine = s.picks.find((k) => k.id === me.id);
   const myPick = mine ? mine.index : null;
 
@@ -451,13 +487,13 @@ function game(s) {
     if (c.revealed) cls.push('rev', c.type);
     else {
       if (keyOn && c.type) cls.push('key', c.type);
-      if (canGuess) cls.push('tap');
+      if (canGuess) cls.push(c.type ? 'own' : 'tap'); // las de tu propia clave no son para ti
       // Quiénes del equipo tienen marcada esta carta.
       const pickers = s.picks.filter((k) => k.index === i).map((k) => s.players.find((p) => p.id === k.id)).filter(Boolean);
       if (pickers.length) { cls.push('picked'); marks = `<span class="pk">${pickers.map(avatar).join('')}</span>`; }
       if (myPick === i) cls.push('sel');
     }
-    return `<div class="${cls.join(' ')}" ${canGuess && !c.revealed ? `data-card="${i}"` : ''}>${marks}${esc(c.word)}</div>`;
+    return `<div class="${cls.join(' ')}" ${canGuess && !c.revealed && !c.type ? `data-card="${i}"` : ''}>${marks}${esc(c.word)}</div>`;
   }).join('');
 
   let actions = '';
@@ -474,7 +510,7 @@ function game(s) {
         <select id="clueNum" style="flex:1">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 0, '∞'].map((n) => `<option>${n}</option>`).join('')}</select>
         <button style="flex:1.4">Enviar</button></form>`;
     }
-    if (boss) actions += `<button class="${showKey ? 'on' : 'ghost'}" data-act="toggleKey">${showKey ? '🙈 Ocultar la clave' : '👁 Ver la clave'}</button>`;
+    if (hasKey) actions += `<button class="${showKey ? 'on' : 'ghost'}" data-act="toggleKey">${showKey ? '🙈 Ocultar la clave' : s.duo ? '👁 Ver mi clave' : '👁 Ver la clave'}</button>`;
     if (canGuess) {
       actions += myPick !== null
         ? `<div class="row"><button data-act="confirm" data-index="${myPick}">Revelar ${esc(s.cards[myPick].word)}</button><button class="ghost" data-act="cancel" style="flex:.5">Cancelar</button></div>`
@@ -482,11 +518,16 @@ function game(s) {
     }
   }
 
-  const series = s.settings.bestOf > 1
+  const series = s.settings.bestOf > 1 && !s.duo
     ? `<div class="series">Mejor de ${s.settings.bestOf} · <b class="t-blue">${s.score.blue}</b> – <b class="t-red">${s.score.red}</b> · ronda ${s.round}</div>` : '';
-  return `<div class="score"><span class="t-blue">AZUL ${s.remaining.blue}</span>
+  const top = s.duo
+    ? `<span class="t-blue">FALTAN ${s.remaining.blue}</span>
+      <span class="me">${esc(me.name)} · ${boss ? 'das la pista' : 'adivinas'}</span>
+      <span class="t-red">TURNO ${s.duo.turnNo}/${s.duo.maxTurns}</span>`
+    : `<span class="t-blue">AZUL ${s.remaining.blue}</span>
       <span class="me">${esc(me.name)} · ${boss ? 'jefe' : 'operativo'} <b class="t-${me.team}">${TEAM_NAME[me.team]}</b></span>
-      <span class="t-red">${s.remaining.red} ROJO</span></div>
+      <span class="t-red">${s.remaining.red} ROJO</span>`;
+  return `<div class="score">${top}</div>
     ${series}
     <div id="status">${statusHtml(s)}</div>
     <div class="board">${cards}</div>
@@ -544,6 +585,7 @@ document.addEventListener('click', (e) => {
   if (act === 'cancel') return api('pick', { index: null });
   if (act === 'confirm') return api('guess', { index: Number(b.dataset.index) });
   if (act === 'setTeam') return api('setTeam', { team: b.dataset.team, role: b.dataset.role });
+  if (act === 'setSeat') return api('setSeat', { seat: Number(b.dataset.seat) });
   if (act === 'kick') { if (confirm(`¿Expulsar a ${b.dataset.name}?`)) api('kick', { id: Number(b.dataset.id) }); return; }
   api(act);
 });
@@ -572,6 +614,10 @@ document.addEventListener('change', (e) => {
   if (e.target.dataset.mix) api('settings', { mix: readMix() });
   if (e.target.id === 'setTime') api('settings', { turnSeconds: Number(e.target.value) });
   if (e.target.id === 'setBo') api('settings', { bestOf: Number(e.target.value) });
+  if (e.target.id === 'setMode') api('settings', { mode: e.target.value });
+  if (e.target.id === 'setDuoWords') api('settings', { duoWords: Number(e.target.value) });
+  if (e.target.id === 'setDuoTurns') api('settings', { duoTurns: Number(e.target.value) });
+  if (e.target.id === 'setDiff') api('settings', { difficulty: e.target.value });
 });
 
 document.addEventListener('submit', async (e) => {

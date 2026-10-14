@@ -68,6 +68,8 @@
   .person.off { opacity: .45; filter: grayscale(.6); }
   .none { font-size: 1.15vw; opacity: .75; font-style: italic; padding: 1.5vh 0; position: relative; }
 
+  .turns { font-size: 1.5vw; position: relative; } .turns b { font-family: var(--title); font-size: 7vh; line-height: 1; }
+  .box .left { font-size: 1.2vw; line-height: 1.6; position: relative; } .box .left b { font-family: var(--title); font-size: 1.6vw; }
   .count { display: flex; align-items: center; justify-content: center; gap: .8vw; }
   .count .mini { width: 6.4vw; height: 8.5vh; border-radius: .6vw; overflow: hidden; box-shadow: 0 .4vh .8vh #0008; }
   .count b { font-family: var(--title); font-size: 9vh; line-height: 1; -webkit-text-stroke: .16vw #fff; text-shadow: 0 .5vh 0 #0006; }
@@ -270,6 +272,25 @@ function side(s, team) {
     <div class="box ${myTurn && s.phase === 'clue' ? 'active' : ''}"><h3>JEFE DE ESPÍAS</h3>${people(s, team, 'spymaster')}</div>`;
 }
 
+// Modo dúo: a la izquierda quién da la pista y quién adivina; a la derecha, la máquina.
+function duoSide(s) {
+  const person = (p) => `<div class="person ${p.connected ? '' : 'off'}">${avatar(p)}<span class="nm">${esc(p.name)}</span></div>`;
+  const box = (title, list, active) => `<div class="box ${active ? 'active' : ''}"><h3>${title}</h3>${list.length
+    ? `<div class="people">${list.map(person).join('')}</div>` : '<div class="none">esperando…</div>'}</div>`;
+  const seated = s.players.filter((p) => p.seat);
+  if (!s.duo) return box('JUGADOR 1', seated.filter((p) => p.seat === 1)) + box('JUGADOR 2', seated.filter((p) => p.seat === 2));
+  const playing = s.state === 'playing';
+  return box('DA LA PISTA', seated.filter((p) => p.role === 'spymaster'), playing && s.phase === 'clue')
+    + `<div class="count"><b>${s.remaining.blue}</b><div class="mini">${art('blue', 0)}</div></div>`
+    + box('ADIVINA', seated.filter((p) => p.role === 'operative'), playing && s.phase === 'guess');
+}
+
+function duoInfo(s) {
+  if (!s.duo) return `<div class="box"><h3>LA MÁQUINA</h3><div class="none">${s.settings.duoWords} palabras cada uno<br>${s.settings.duoTurns} turnos para encontrarlas</div></div>`;
+  return `<div class="box"><h3>TURNO</h3><div class="turns"><b>${s.duo.turnNo}</b> de ${s.duo.maxTurns}</div></div>
+    <div class="box"><h3>FALTAN</h3><div class="left">Clave del jugador 1: <b>${s.duo.left1}</b><br>Clave del jugador 2: <b>${s.duo.left2}</b></div></div>`;
+}
+
 function log(s) {
   if (s.state === 'lobby') return '';
   // Cada pista con las palabras que eligieron después.
@@ -294,7 +315,13 @@ function wordsText(s) {
   return on.map((o) => `${Math.round((100 * mix[o.id]) / total)}% ${o.label}`).join(' + ');
 }
 
+const LEVEL = { facil: 'Fácil', media: 'Media', dificil: 'Difícil' };
+
 function settingsText(s) {
+  if (s.settings.mode === 'duo') {
+    const c = s.settings;
+    return ['Modo dúo', `${c.duoWords} palabras cada uno`, `${c.duoTurns} turnos`, `Dificultad ${LEVEL[c.difficulty].toLowerCase()}`, c.turnSeconds ? `${c.turnSeconds} s por turno` : 'Sin reloj'].join(' · ');
+  }
   const c = s.settings;
   return [
     c.bestOf === 1 ? 'Partida única' : `Mejor de ${c.bestOf}`,
@@ -309,6 +336,12 @@ function head(s) {
   const room = `<div class="room">Sala <b>${s.code}</b></div>${series}`
     + (s.state === 'playing' ? `<button class="quit ${quitArmed ? 'armed' : ''}" data-act="abort">${quitArmed ? '¿Seguro? Pulsa otra vez' : 'Terminar partida'}</button>` : '');
   if (s.state === 'lobby') return `<h1 class="logo">CLAVE SECRETA</h1>`;
+  if (s.state === 'over' && s.duo) {
+    const won = s.duo.result === 'win';
+    const title = won ? `🏆 ¡Misión cumplida en ${s.duo.turnNo} turnos!` : s.winReason === 'assassin' ? '💀 Tocaron al asesino' : '⌛ Se acabaron los turnos';
+    const sub = won ? `Tenían ${s.duo.maxTurns} turnos` : `Quedaron ${s.remaining.blue} palabras sin encontrar`;
+    return `${room}<div><h1 class="t-${won ? 'blue' : 'red'}">${title}</h1><div class="sub">${sub}</div></div><button data-act="newGame">Nueva partida</button>`;
+  }
   if (s.state === 'over') {
     const why = s.winReason === 'assassin' ? 'El otro equipo tocó al asesino' : 'Encontraron a todos sus agentes';
     const more = s.settings.bestOf > 1 && !s.seriesOver;
@@ -325,7 +358,7 @@ function head(s) {
   }
   const left = s.guessesLeft === null ? 'intentos sin límite' : `quedan ${s.guessesLeft} intento${s.guessesLeft === 1 ? '' : 's'}`;
   return `${room}${clock}<div class="clue ${s.turn}">${esc(s.clue.word)} <b>${s.clue.num}</b></div>
-    <div class="sub">Adivina el equipo <b class="t-${s.turn}">${TEAM_NAME[s.turn]}</b><br>${left}</div>`;
+    <div class="sub">${s.duo ? `Adivina <b class="t-blue">${esc((s.players.find((p) => p.seat && p.role === 'operative') || {}).name || '')}</b>` : `Adivina el equipo <b class="t-${s.turn}">${TEAM_NAME[s.turn]}</b>`}<br>${s.duo ? 'sigue mientras acierte' : left}</div>`;
 }
 
 function center(s) {
@@ -401,7 +434,10 @@ function sounds(prev, s) {
   if (prev.state === 'lobby' && s.state === 'playing') play('start');
   if (s.state !== 'lobby' && s.last && (!prev.last || prev.last.seq !== s.last.seq)) play(s.last.sfx);
   if (s.state === 'playing' && s.clue && (!prev.clue || prev.clue.word !== s.clue.word || prev.turn !== s.turn)) play('clue');
-  if (prev.state === 'playing' && s.state === 'over') setTimeout(() => play('win'), s.winReason === 'assassin' ? 1600 : 500);
+  if (prev.state === 'playing' && s.state === 'over') {
+    if (s.duo && s.duo.result === 'lose') { if (s.winReason === 'turns') play('time'); }
+    else setTimeout(() => play('win'), s.winReason === 'assassin' ? 1600 : 500);
+  }
 }
 
 // ---------- reloj ----------
@@ -423,8 +459,9 @@ function render(s) {
   skew = s.now - Date.now();
   if (s.state !== 'playing') quitArmed = false;
   setHTML('head', head(s));
-  setHTML('left', side(s, 'blue'));
-  setHTML('right', side(s, 'red') + log(s));
+  const duo = s.settings.mode === 'duo';
+  setHTML('left', duo ? duoSide(s) : side(s, 'blue'));
+  setHTML('right', (duo ? duoInfo(s) : side(s, 'red')) + log(s));
   setHTML('center', center(s));
   setHTML('toast', s.last && s.state !== 'lobby' ? `<div class="${s.last.type}" data-seq="${s.last.seq}">${esc(s.last.text)}</div>` : '');
   tick();

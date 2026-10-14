@@ -11,6 +11,10 @@ const CATEGORIES = require('./categories');
 const MIX_KEYS = ['random', ...Object.keys(CATEGORIES), 'propias'];
 const MIX_LABEL = { random: 'Random', propias: 'Propias' };
 for (const key in CATEGORIES) MIX_LABEL[key] = CATEGORIES[key].label;
+// Modo dúo: dos jugadores cooperan contra la máquina (turnos limitados y asesinos).
+const DUO_WORDS = [4, 5, 6, 7, 8, 9];
+const DUO_TURNS = [5, 6, 7, 8, 9, 10, 11, 12];
+const DUO_LEVELS = ['facil', 'media', 'dificil'];
 const defaultMix = () => Object.fromEntries(MIX_KEYS.map((k) => [k, k === 'random' ? 100 : 0]));
 
 const PORT = process.env.PORT || 3210;
@@ -94,7 +98,8 @@ function createRoom(req) {
     last: null,
     lastSeq: 0,
     log: [],
-    settings: { turnSeconds: 0, bestOf: 1, customWords: [], mix: defaultMix() },
+    settings: { turnSeconds: 0, bestOf: 1, customWords: [], mix: defaultMix(), mode: 'teams', duoWords: 7, duoTurns: 9, difficulty: 'facil' },
+    duo: null, // estado de la partida en modo dúo
     score: { red: 0, blue: 0 },
     round: 0,
     firstTeam: null,
@@ -129,7 +134,13 @@ function teamAgent(room, team) {
   return pool[shown % pool.length];
 }
 
+const seatOf = (room, seat) => room.players.find((p) => p.seat === seat);
+
 function startProblem(room) {
+  if (room.settings.mode === 'duo') {
+    for (const seat of [1, 2]) if (!seatOf(room, seat)) return `Falta el jugador ${seat}`;
+    return null;
+  }
   for (const t of TEAMS) {
     if (!spymasterOf(room, t)) return `Falta el jefe de espías del equipo ${TEAM_NAME[t]}`;
     if (!room.players.some((p) => p.team === t && p.role === 'operative')) return `Falta un operativo en el equipo ${TEAM_NAME[t]}`;
@@ -152,7 +163,7 @@ function armTimer(room, extraSeconds = 0) {
   room.deadline = Date.now() + ms;
   room.timer = setTimeout(() => {
     if (room.state !== 'playing') return;
-    setLast(room, `¡Se acabó el tiempo del equipo ${TEAM_NAME[room.turn]}!`, room.turn, 'time');
+    setLast(room, room.duo ? '¡Se acabó el tiempo!' : `¡Se acabó el tiempo del equipo ${TEAM_NAME[room.turn]}!`, room.turn, 'time');
     endTurn(room);
     broadcast(room);
   }, ms);
@@ -229,6 +240,7 @@ function startGame(room, first) {
 }
 
 function endTurn(room) {
+  if (room.duo) return duoEndTurn(room);
   room.turn = other(room.turn);
   room.phase = 'clue';
   room.clue = null;
@@ -248,7 +260,118 @@ function win(room, team, reason) {
   room.seriesOver = room.score[team] >= Math.ceil(room.settings.bestOf / 2);
 }
 
+// ---------- modo dúo ----------
+// Cartas: 'p1' las ve el jugador 1 y las adivina el 2; 'p2' al revés.
+// 'ass1' la ve el jugador 1 y es mortal para el 2; 'ass2' al revés.
+
+const duoLeft = (room, seat) => room.cards.filter((c) => c.type === 'p' + seat && !c.revealed).length;
+
+function duoPool(difficulty) {
+  if (difficulty === 'dificil') return CATEGORIES.abstractas.words;
+  if (difficulty === 'media') return Object.keys(CATEGORIES).filter((k) => k !== 'abstractas').flatMap((k) => CATEGORIES[k].words).concat(WORDS);
+  return WORDS;
+}
+
+// Quien da la pista hace de jefe y el otro adivina: así valen las mismas reglas de turno.
+function duoRoles(room) {
+  for (const p of room.players) if (p.seat) p.role = p.seat === room.duo.giver ? 'spymaster' : 'operative';
+}
+
+function startDuo(room) {
+  const n = room.settings.duoWords;
+  const types = shuffle([...Array(n).fill('p1'), ...Array(n).fill('p2'), 'ass1', 'ass2', ...Array(23 - 2 * n).fill('neutral')]);
+  const used = new Set();
+  const words = [];
+  for (const word of shuffle([...duoPool(room.settings.difficulty)])) {
+    if (words.length === 25) break;
+    if (used.has(norm(word))) continue;
+    used.add(norm(word));
+    words.push(word);
+  }
+  room.cards = words.map((word, i) => ({ word, type: types[i], revealed: false }));
+  room.state = 'playing';
+  room.turn = 'blue';
+  room.phase = 'clue';
+  room.clue = null;
+  room.guessesLeft = null;
+  room.guessesMade = 0;
+  room.winner = null;
+  room.winReason = null;
+  room.last = null;
+  room.log = [];
+  room.civilOffset = crypto.randomInt(1000);
+  room.duo = { turnNo: 1, giver: 1, result: null };
+  duoRoles(room);
+  clearPicks(room);
+  armTimer(room);
+}
+
+function duoFinish(room, result, reason) {
+  room.state = 'over';
+  room.duo.result = result; // win | lose
+  room.winner = result === 'win' ? 'blue' : null;
+  room.winReason = reason;  // agents | assassin | turns
+  room.seriesOver = true;
+  stopTimer(room);
+  clearPicks(room);
+}
+
+function duoEndTurn(room) {
+  const d = room.duo;
+  if (d.turnNo >= room.settings.duoTurns) return duoFinish(room, 'lose', 'turns');
+  d.turnNo++;
+  // Se alternan, salvo que al otro ya no le queden palabras por hacer adivinar.
+  const next = d.giver === 1 ? 2 : 1;
+  if (duoLeft(room, next) > 0) d.giver = next;
+  room.phase = 'clue';
+  room.clue = null;
+  room.guessesLeft = null;
+  room.guessesMade = 0;
+  duoRoles(room);
+  clearPicks(room);
+  armTimer(room);
+}
+
+function duoGuess(room, p, card, index) {
+  if (card.type === 'p' + p.seat || card.type === 'ass' + p.seat) return 'Esa carta está en tu clave: no es para ti';
+  card.revealed = true;
+  for (const x of room.players) if (x.pick === index) x.pick = null;
+  if (card.type === 'p1' || card.type === 'p2') {
+    const pool = [1, 2].map((seat) => seatOf(room, seat)).map((x) => x && x.agent).filter(Boolean);
+    const found = room.cards.filter((c) => c.revealed && (c.type === 'p1' || c.type === 'p2')).length - 1;
+    card.agent = pool.length ? pool[found % pool.length] : null;
+    room.log.push({ kind: 'guess', team: 'blue', by: p.name, word: card.word, cardType: 'blue' });
+    setLast(room, `${card.word}: ¡correcto!`, 'blue', 'ok');
+    room.guessesMade++;
+    if (duoLeft(room, 1) + duoLeft(room, 2) === 0) duoFinish(room, 'win', 'agents');
+    else if (duoLeft(room, room.duo.giver) === 0) duoEndTurn(room);
+  } else if (card.type === 'neutral') {
+    card.agent = teamAgent(room, 'neutral');
+    room.log.push({ kind: 'guess', team: 'blue', by: p.name, word: card.word, cardType: 'neutral' });
+    setLast(room, `${card.word}: civil, fin del turno`, 'neutral', 'miss');
+    duoEndTurn(room);
+  } else {
+    card.agent = listImages('asesino-')[0] || null;
+    room.log.push({ kind: 'guess', team: 'blue', by: p.name, word: card.word, cardType: 'assassin' });
+    setLast(room, `${card.word}: ¡el asesino!`, 'assassin', 'assassin');
+    duoFinish(room, 'lose', 'assassin');
+  }
+  return null;
+}
+
+// Lo que ve cada quien de una carta en modo dúo: lo revelado y, si juega, su propia clave.
+function duoType(room, c, p) {
+  const shown = c.type === 'p1' || c.type === 'p2' ? 'blue' : c.type === 'neutral' ? 'neutral' : 'assassin';
+  if (c.revealed || room.state === 'over') return shown;
+  if (p && p.seat && (c.type === 'p' + p.seat || c.type === 'ass' + p.seat)) return shown;
+  return null;
+}
+
 function backToLobby(room) {
+  if (room.duo) {
+    room.duo = null;
+    for (const p of room.players) if (p.seat) p.role = p.seat === 1 ? 'spymaster' : 'operative';
+  }
   stopTimer(room);
   clearPicks(room);
   room.state = 'lobby';
@@ -267,6 +390,7 @@ function act(room, p, a) {
   switch (a.type) {
     case 'setTeam': {
       if (!p) return 'Jugador desconocido';
+      if (room.settings.mode === 'duo') return 'En modo dúo se elige jugador 1 o jugador 2';
       if (!TEAMS.includes(a.team) || !['spymaster', 'operative'].includes(a.role)) return 'Equipo inválido';
       if (room.state !== 'lobby' && p.team) return 'No puedes cambiar de equipo durante la partida';
       if (a.role === 'spymaster') {
@@ -278,6 +402,22 @@ function act(room, p, a) {
       }
       p.team = a.team;
       p.role = a.role;
+      return null;
+    }
+    case 'setSeat': {
+      if (!p) return 'Jugador desconocido';
+      if (room.settings.mode !== 'duo') return 'Solo en modo dúo';
+      if (room.state !== 'lobby') return 'La partida ya empezó';
+      if (a.seat === null) { p.seat = null; p.team = null; p.role = null; return null; }
+      if (a.seat !== 1 && a.seat !== 2) return 'Lugar inválido';
+      const holder = seatOf(room, a.seat);
+      if (holder && holder !== p) {
+        if (holder.connected) return 'Ese lugar ya está ocupado';
+        holder.seat = null; holder.team = null; holder.role = null;
+      }
+      p.seat = a.seat;
+      p.team = 'blue';
+      p.role = a.seat === 1 ? 'spymaster' : 'operative';
       return null;
     }
     case 'setAgent': {
@@ -294,7 +434,8 @@ function act(room, p, a) {
       room.score = { red: 0, blue: 0 };
       room.round = 1;
       room.seriesOver = false;
-      startGame(room, TEAMS[crypto.randomInt(2)]);
+      if (room.settings.mode === 'duo') startDuo(room);
+      else startGame(room, TEAMS[crypto.randomInt(2)]);
       return null;
     }
     case 'clue': {
@@ -308,7 +449,7 @@ function act(room, p, a) {
       if (num !== '∞' && !(Number.isInteger(num) && num >= 0 && num <= 9)) return 'Número inválido';
       room.clue = { word, num };
       room.log.push({ kind: 'clue', team: p.team, by: p.name, word, num });
-      room.guessesLeft = unlimited ? null : num + 1;
+      room.guessesLeft = unlimited || room.duo ? null : num + 1; // en dúo se sigue mientras se acierte
       room.guessesMade = 0;
       room.phase = 'guess';
       return null;
@@ -328,6 +469,7 @@ function act(room, p, a) {
       if (p.team !== room.turn || p.role !== 'operative') return 'No es tu turno';
       const card = Number.isInteger(a.index) ? room.cards[a.index] : null;
       if (!card || card.revealed) return 'Carta inválida';
+      if (room.duo) return duoGuess(room, p, card, a.index);
       card.revealed = true;
       card.agent = teamAgent(room, card.type);
       for (const x of room.players) if (x.pick === a.index) x.pick = null;
@@ -361,6 +503,7 @@ function act(room, p, a) {
     case 'takeBoss': {
       // Si el jefe se fue, un operativo de su equipo puede ocupar su lugar.
       if (!p || room.state !== 'playing') return 'No hay partida en curso';
+      if (room.duo) return 'En modo dúo no hay jefe que reemplazar';
       if (!p.team || p.role !== 'operative') return 'Solo un operativo puede reemplazar al jefe';
       const boss = spymasterOf(room, p.team);
       if (boss && boss.connected) return 'Tu jefe sigue conectado';
@@ -390,6 +533,26 @@ function act(room, p, a) {
       if (a.bestOf !== undefined) {
         if (![1, 3, 5].includes(a.bestOf)) return 'Formato inválido';
         room.settings.bestOf = a.bestOf;
+      }
+      if (a.mode !== undefined) {
+        if (!['teams', 'duo'].includes(a.mode)) return 'Modo inválido';
+        if (a.mode !== room.settings.mode) {
+          room.settings.mode = a.mode;
+          // Cambiar de modo vacía los equipos: los lugares no son los mismos.
+          for (const x of room.players) { x.team = null; x.role = null; x.seat = null; }
+        }
+      }
+      if (a.duoWords !== undefined) {
+        if (!DUO_WORDS.includes(a.duoWords)) return 'Cantidad de palabras inválida';
+        room.settings.duoWords = a.duoWords;
+      }
+      if (a.duoTurns !== undefined) {
+        if (!DUO_TURNS.includes(a.duoTurns)) return 'Cantidad de turnos inválida';
+        room.settings.duoTurns = a.duoTurns;
+      }
+      if (a.difficulty !== undefined) {
+        if (!DUO_LEVELS.includes(a.difficulty)) return 'Dificultad inválida';
+        room.settings.difficulty = a.difficulty;
       }
       if (a.customWords !== undefined) {
         room.settings.customWords = parseWords(a.customWords);
@@ -449,15 +612,17 @@ function view(room, p) {
     joinUrl: room.joinUrl,
     agents: listAgents(),
     state: room.state,
-    players: room.players.map(({ id, name, team, role, agent, connected }) => ({ id, name, team, role, agent, connected })),
+    players: room.players.map(({ id, name, team, role, seat, agent, connected }) => ({ id, name, team, role, seat, agent, connected })),
     adminId: admin ? admin.id : null,
     me: p ? {
-      id: p.id, name: p.name, team: p.team, role: p.role, agent: p.agent,
+      id: p.id, name: p.name, team: p.team, role: p.role, seat: p.seat, agent: p.agent,
       isAdmin: admin === p,
-      canTakeBoss: room.state === 'playing' && !!p.team && p.role === 'operative' && (!myBoss || !myBoss.connected),
+      canTakeBoss: room.state === 'playing' && !room.duo && !!p.team && p.role === 'operative' && (!myBoss || !myBoss.connected),
       customText: admin === p ? room.settings.customWords.join('; ') : undefined,
     } : null,
-    settings: { turnSeconds: room.settings.turnSeconds, bestOf: room.settings.bestOf, customCount: room.settings.customWords.length, mix: room.settings.mix },
+    settings: { turnSeconds: room.settings.turnSeconds, bestOf: room.settings.bestOf, customCount: room.settings.customWords.length, mix: room.settings.mix,
+      mode: room.settings.mode, duoWords: room.settings.duoWords, duoTurns: room.settings.duoTurns, difficulty: room.settings.difficulty },
+    duo: room.duo && room.cards ? { turnNo: room.duo.turnNo, maxTurns: room.settings.duoTurns, giver: room.duo.giver, result: room.duo.result, left1: duoLeft(room, 1), left2: duoLeft(room, 2) } : null,
     mixOptions: MIX_KEYS.map((id) => ({ id, label: MIX_LABEL[id] })),
     score: room.score,
     round: room.round,
@@ -475,12 +640,12 @@ function view(room, p) {
     winReason: room.winReason,
     last: room.last,
     log: room.log.slice(-40),
-    remaining: room.cards ? { red: remaining(room, 'red'), blue: remaining(room, 'blue') } : null,
+    remaining: !room.cards ? null : room.duo ? { red: 0, blue: duoLeft(room, 1) + duoLeft(room, 2) } : { red: remaining(room, 'red'), blue: remaining(room, 'blue') },
     cards: room.cards && room.cards.map((c) => ({
       word: c.word,
       revealed: c.revealed,
       agent: c.revealed ? c.agent || null : null,
-      type: c.revealed || seesKey ? c.type : null,
+      type: room.duo ? duoType(room, c, p) : c.revealed || seesKey ? c.type : null,
     })),
   };
 }
@@ -633,7 +798,7 @@ async function handle(req, res) {
       const player = {
         id: room.nextId++,
         token: crypto.randomBytes(12).toString('hex'),
-        name, team: null, role: null, agent: null, pick: null, connected: false,
+        name, team: null, role: null, seat: null, agent: null, pick: null, connected: false,
       };
       room.players.push(player);
       broadcast(room);
